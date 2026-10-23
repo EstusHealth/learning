@@ -1,0 +1,2019 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Build a research prompt for any LLM, import the JSON it returns, and print flashcards on A4 with cut lines.">
+<title>Flashcard Template Maker</title>
+<style>
+/* ---------- Theme tokens ---------- */
+:root {
+  --bg: #f5f5f2;
+  --surface: #ffffff;
+  --surface-2: #efefea;
+  --text: #1c1e20;
+  --muted: #5b6066;
+  --border: #d8d8d1;
+  --accent: #1c6b72;
+  --accent-hover: #15565c;
+  --accent-ink: #ffffff;
+  --accent-soft: #e1eff0;
+  --danger: #a8261d;
+  --danger-soft: #fbeceb;
+  --warn: #7d5300;
+  --warn-soft: #fcf3dc;
+  --ok: #22663a;
+  --ok-soft: #e4f2e8;
+  --shadow: 0 1px 2px rgba(0,0,0,.05), 0 4px 14px rgba(0,0,0,.05);
+  --radius: 12px;
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #141617;
+    --surface: #1d2022;
+    --surface-2: #262a2d;
+    --text: #e7e8e6;
+    --muted: #a3a8ad;
+    --border: #353a3e;
+    --accent: #5db4ba;
+    --accent-hover: #7cc6cb;
+    --accent-ink: #0d1f21;
+    --accent-soft: #1d3436;
+    --danger: #f08a80;
+    --danger-soft: #3a1f1d;
+    --warn: #e9bf62;
+    --warn-soft: #362c16;
+    --ok: #7fcf98;
+    --ok-soft: #1b3123;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 14px rgba(0,0,0,.25);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #141617;
+  --surface: #1d2022;
+  --surface-2: #262a2d;
+  --text: #e7e8e6;
+  --muted: #a3a8ad;
+  --border: #353a3e;
+  --accent: #5db4ba;
+  --accent-hover: #7cc6cb;
+  --accent-ink: #0d1f21;
+  --accent-soft: #1d3436;
+  --danger: #f08a80;
+  --danger-soft: #3a1f1d;
+  --warn: #e9bf62;
+  --warn-soft: #362c16;
+  --ok: #7fcf98;
+  --ok-soft: #1b3123;
+  --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 14px rgba(0,0,0,.25);
+  color-scheme: dark;
+}
+
+/* ---------- Base ---------- */
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 17px/1.55 var(--font);
+}
+h1, h2, h3 { line-height: 1.25; margin: 0 0 .5em; }
+h2 { font-size: 1.3rem; }
+h3 { font-size: 1.08rem; }
+p { margin: 0 0 .8em; }
+a { color: var(--accent); }
+button, input, select, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.wrap { max-width: 1120px; margin: 0 auto; padding: 0 16px; }
+.skip { position: absolute; left: -9999px; }
+.skip:focus { left: 16px; top: 8px; background: var(--surface); padding: 8px 12px; z-index: 10; }
+[hidden] { display: none !important; }
+
+/* ---------- Header and steps ---------- */
+.app-header { background: var(--surface); border-bottom: 1px solid var(--border); }
+.head-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 16px; padding-bottom: 10px; }
+.brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.logo {
+  flex: none; width: 38px; height: 30px; border-radius: 6px; position: relative;
+  background: var(--accent);
+}
+.logo::after {
+  content: ""; position: absolute; inset: 5px 7px; border: 2px dashed var(--accent-ink); border-radius: 3px; opacity: .8;
+}
+.brand h1 { font-size: 1.25rem; margin: 0; }
+.brand .tag { margin: 0; color: var(--muted); font-size: .9rem; }
+.steps {
+  display: flex; gap: 6px; overflow-x: auto; padding-top: 4px; padding-bottom: 0;
+  scrollbar-width: thin;
+}
+.steps button {
+  flex: none; border: 0; background: none; padding: 10px 14px 12px; cursor: pointer;
+  color: var(--muted); font-weight: 600; font-size: .95rem; border-bottom: 3px solid transparent;
+}
+.steps button:hover { color: var(--text); }
+.steps button[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); }
+.steps .num {
+  display: inline-grid; place-items: center; width: 1.5em; height: 1.5em; border-radius: 50%;
+  background: var(--surface-2); margin-right: 6px; font-size: .85em;
+}
+.steps button[aria-selected="true"] .num { background: var(--accent); color: var(--accent-ink); }
+
+main.wrap { padding-top: 24px; padding-bottom: 40px; }
+
+/* ---------- Boxes, forms, buttons ---------- */
+.box {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 20px; box-shadow: var(--shadow); margin-bottom: 20px;
+}
+.grid-2 { display: grid; gap: 20px; }
+@media (min-width: 920px) { .grid-2 { grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); align-items: start; } }
+label, legend { display: block; font-weight: 600; margin: 14px 0 6px; font-size: .95rem; }
+fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.req, .opt { font-weight: 500; font-size: .8rem; color: var(--muted); margin-left: 4px; }
+.req { color: var(--accent); }
+input[type="text"], input[type="number"], input[type="search"], select, textarea {
+  width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--surface); font-size: 1rem;
+}
+textarea { resize: vertical; }
+input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: 0; border-color: var(--accent); }
+.row { display: grid; gap: 0 14px; grid-template-columns: 1fr 1fr; }
+@media (max-width: 480px) { .row { grid-template-columns: 1fr; } }
+.hint { color: var(--muted); font-size: .88rem; margin: 6px 0 0; }
+.field-error { color: var(--danger); font-size: .9rem; margin: 6px 0 0; font-weight: 600; }
+.checks { display: grid; gap: 8px; grid-template-columns: 1fr 1fr; }
+@media (max-width: 480px) { .checks { grid-template-columns: 1fr; } }
+.check {
+  display: flex; gap: 10px; align-items: flex-start; margin: 0; font-weight: 400;
+  border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; cursor: pointer; background: var(--surface);
+}
+.check input { margin-top: 5px; accent-color: var(--accent); width: 16px; height: 16px; flex: none; }
+.check strong { display: block; font-size: .95rem; }
+.check span { color: var(--muted); font-size: .85rem; line-height: 1.35; display: block; }
+.radios { display: grid; gap: 8px; }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 10px 16px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--surface); cursor: pointer; font-weight: 600; font-size: .95rem; text-decoration: none; color: var(--text);
+  min-height: 44px;
+}
+.btn:hover { background: var(--surface-2); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+.btn.ghost { background: none; border-color: transparent; }
+.btn.ghost:hover { background: var(--surface-2); }
+.btn.small { padding: 6px 12px; min-height: 36px; font-size: .88rem; }
+.btn:disabled { opacity: .55; cursor: not-allowed; }
+.btn-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; align-items: center; }
+.link-btn { background: none; border: 0; padding: 4px 6px; color: var(--accent); cursor: pointer; font-weight: 600; font-size: .85rem; border-radius: 6px; }
+.link-btn:hover { background: var(--accent-soft); }
+
+/* ---------- How it works ---------- */
+.how-steps { list-style: none; padding: 0; margin: 0; display: grid; gap: 14px; }
+@media (min-width: 760px) { .how-steps { grid-template-columns: repeat(3, 1fr); } }
+.how-steps li { display: flex; gap: 12px; align-items: flex-start; }
+.how-steps .n {
+  flex: none; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--accent-soft); color: var(--accent); font-weight: 700;
+}
+.how-steps p { margin: 2px 0 0; color: var(--muted); font-size: .93rem; }
+.how-steps strong { font-size: 1rem; }
+
+.out-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.out-head h2 { margin: 0; }
+#promptOut {
+  font-family: var(--mono); font-size: .82rem; line-height: 1.5; min-height: 340px;
+  background: var(--surface-2);
+}
+#jsonIn { font-family: var(--mono); font-size: .85rem; min-height: 260px; }
+#jsonIn.drag { outline: 3px dashed var(--accent); }
+
+/* ---------- Messages ---------- */
+.msg { border-radius: 10px; padding: 14px 16px; margin: 0 0 14px; border: 1px solid transparent; }
+.msg h3 { margin: 0 0 6px; font-size: 1.02rem; }
+.msg.ok { background: var(--ok-soft); border-color: color-mix(in srgb, var(--ok) 30%, transparent); }
+.msg.ok h3 { color: var(--ok); }
+.msg.err { background: var(--danger-soft); border-color: color-mix(in srgb, var(--danger) 30%, transparent); }
+.msg.err h3 { color: var(--danger); }
+.msg.warn { background: var(--warn-soft); border-color: color-mix(in srgb, var(--warn) 30%, transparent); }
+.msg.warn h3 { color: var(--warn); }
+.msg.info { background: var(--surface-2); }
+.msg ul { margin: 6px 0 0; padding-left: 20px; }
+.msg li { margin: 3px 0; }
+.msg pre {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px; overflow-x: auto;
+  font-family: var(--mono); font-size: .8rem; margin: 10px 0; white-space: pre;
+}
+.msg .btn-row { margin-top: 10px; }
+
+/* ---------- Deck header and toolbar ---------- */
+.deck-title { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: baseline; }
+.deck-title h2 { margin: 0; font-size: 1.45rem; }
+.chip {
+  display: inline-block; padding: 2px 10px; border-radius: 999px; background: var(--accent-soft); color: var(--accent);
+  font-size: .8rem; font-weight: 700; text-transform: capitalize;
+}
+.stats { color: var(--muted); font-size: .92rem; }
+details summary { cursor: pointer; font-weight: 600; font-size: .93rem; }
+details ul { margin: 8px 0 0; padding-left: 20px; font-size: .92rem; }
+.filters { display: grid; gap: 0 12px; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+.filters label { margin-top: 0; }
+.count-line { margin: 12px 0 0; font-size: .93rem; color: var(--muted); }
+.count-line strong { color: var(--text); }
+
+/* ---------- Card tiles (screen) ---------- */
+.card-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+.tile {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: var(--shadow); display: flex; flex-direction: column; min-width: 0;
+}
+.tile.off { opacity: .5; }
+.tile-top { display: flex; align-items: center; gap: 8px; padding: 8px 10px 0 12px; font-size: .85rem; }
+.tile-top .sel { display: flex; align-items: center; gap: 6px; margin: 0; font-weight: 600; font-size: .82rem; cursor: pointer; }
+.tile-top .sel input { accent-color: var(--accent); width: 16px; height: 16px; }
+.tile-top .spacer { flex: 1; }
+.badge { font-size: .72rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: var(--surface-2); color: var(--muted); white-space: nowrap; }
+.diff { color: var(--accent); letter-spacing: 1px; font-size: .8rem; }
+.flip { perspective: 1200px; height: 210px; margin: 8px 10px; cursor: pointer; border-radius: 10px; }
+.flip-inner { position: relative; width: 100%; height: 100%; transition: transform .45s ease; transform-style: preserve-3d; }
+.tile.flipped .flip-inner { transform: rotateY(180deg); }
+.face {
+  position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden;
+  border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; overflow: auto;
+  display: flex; flex-direction: column; background: var(--surface);
+}
+.face.back { transform: rotateY(180deg); background: var(--surface-2); }
+.face .crumb { font-size: .74rem; color: var(--muted); line-height: 1.3; flex: none; }
+.face .ftext { margin: auto 0; font-size: 1.04rem; line-height: 1.4; overflow-wrap: anywhere; }
+.face.front .ftext { text-align: center; font-weight: 600; }
+.face.back .ftext { font-size: .95rem; margin: 0 0 auto; }
+.face .learn { font-size: .78rem; color: var(--muted); margin-top: 8px; border-top: 1px solid var(--border); padding-top: 6px; flex: none; }
+.tile-foot { display: flex; gap: 10px; justify-content: space-between; padding: 0 12px 10px; font-size: .78rem; color: var(--muted); }
+.tile.editing { padding: 10px 12px 12px; }
+.tile.editing label { margin-top: 8px; font-size: .85rem; }
+.tile.editing textarea { font-size: .92rem; }
+.empty-state { text-align: center; padding: 40px 20px; }
+.empty-state p { color: var(--muted); }
+@media (prefers-reduced-motion: reduce) { .flip-inner { transition: none; } }
+
+/* ---------- Study order ---------- */
+.order-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+.order-item { display: flex; gap: 14px; border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; background: var(--surface); }
+.order-item.cycle { border-color: var(--warn); background: var(--warn-soft); }
+.oi-num { flex: none; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); font-weight: 700; font-size: .9rem; }
+.oi-body { min-width: 0; flex: 1; }
+.oi-path { font-size: .8rem; color: var(--muted); }
+.oi-name { font-weight: 700; }
+.oi-desc { color: var(--muted); font-size: .92rem; margin: 2px 0 6px; }
+.oi-rel { font-size: .88rem; margin: 2px 0; }
+.oi-rel b { font-weight: 600; }
+.oi-count { flex: none; font-size: .82rem; color: var(--muted); white-space: nowrap; }
+
+/* ---------- Print options ---------- */
+.opt-grid { display: grid; gap: 4px 24px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+.instruction {
+  border-left: 4px solid var(--accent); background: var(--accent-soft); padding: 10px 14px; border-radius: 0 8px 8px 0;
+  margin: 16px 0 10px; font-size: .95rem;
+}
+.preview-title { margin: 8px 0 4px; }
+
+/* ---------- Toast ---------- */
+#toast {
+  position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%) translateY(20px); opacity: 0;
+  background: var(--text); color: var(--bg); padding: 10px 18px; border-radius: 999px; font-weight: 600;
+  transition: opacity .2s, transform .2s; pointer-events: none; z-index: 20; max-width: calc(100% - 32px); text-align: center;
+}
+#toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* ---------- Deck state toggles ---------- */
+body:not(.has-deck) .has-deck-only { display: none !important; }
+body.has-deck .no-deck-only { display: none !important; }
+
+/* ---------- Paper (preview and print). Always black on white. ---------- */
+#print-root, #study-print {
+  position: fixed; left: -30000px; top: 0; visibility: hidden; pointer-events: none;
+}
+body.tab-print.has-deck #print-root {
+  position: static; visibility: visible; pointer-events: auto;
+  max-width: 1120px; margin: 0 auto; padding: 0 16px 48px; overflow-x: auto;
+}
+.page-frame {
+  background: #fff; color: #000; width: 210mm; padding: 10mm; margin: 0 auto 24px;
+  box-shadow: 0 2px 12px rgba(0,0,0,.25); position: relative;
+}
+.page-label {
+  position: absolute; top: 3mm; left: 10mm; right: 10mm; font: 600 11px/1.2 var(--font); color: #666;
+  display: flex; justify-content: space-between;
+}
+.sheet { position: relative; width: 190mm; height: 276mm; overflow: hidden; background: #fff; }
+.sheet svg.lines { position: absolute; left: 0; top: 0; pointer-events: none; }
+.lines .cut { stroke: #8a8a8a; stroke-width: .2; stroke-dasharray: 1.6 1.2; fill: none; }
+.lines .fold { stroke: #9a9a9a; stroke-width: .2; stroke-dasharray: .35 .9; fill: none; }
+.lines .crop { stroke: #000; stroke-width: .2; }
+.lines .fold-label { font: 1.9px var(--font); fill: #777; text-anchor: middle; }
+.print-empty { font: 16px var(--font); color: #333; padding: 20mm; text-align: center; }
+
+.pcard {
+  position: absolute; padding: 3.5mm 4mm 2.8mm; display: flex; flex-direction: column;
+  color: #000; font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  overflow: hidden; contain: strict;
+}
+.pc-crumb {
+  flex: none; font-size: 6.5pt; line-height: 1.25; color: #444; margin-bottom: 1.2mm;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.pc-fit { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; line-height: 1.28; }
+.pc-text { overflow-wrap: anywhere; hyphens: auto; }
+.pcard.front .pc-text { margin: auto 0; text-align: center; font-weight: 600; }
+.pcard.back .pc-text { margin: auto 0; text-align: left; }
+.pc-text b { font-weight: 800; text-decoration: underline; text-underline-offset: .15em; }
+.pc-learn {
+  flex: none; font-size: 6.5pt; line-height: 1.25; color: #222; margin-top: 1.2mm; padding-top: .9mm;
+  border-top: .2mm solid #bbb;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.pc-foot {
+  flex: none; display: flex; justify-content: space-between; gap: 2mm; margin-top: 1.2mm;
+  font-size: 6pt; line-height: 1.2; color: #555; white-space: nowrap;
+}
+.pc-foot span:first-child { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.pcard.overflow { outline: 2px solid #d33; outline-offset: -2px; }
+
+/* Study order sheet */
+.study-sheet { overflow: hidden; }
+.study-fit { font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; color: #000; font-size: 10pt; line-height: 1.3; }
+.study-fit h1 { font-size: 1.8em; margin: 0 0 .2em; }
+.study-fit .sub { color: #444; margin: 0 0 .9em; }
+.study-fit table { width: 100%; border-collapse: collapse; }
+.study-fit th, .study-fit td { text-align: left; vertical-align: top; padding: .35em .5em; border-bottom: .2mm solid #ccc; }
+.study-fit th { font-size: .85em; text-transform: uppercase; letter-spacing: .04em; color: #333; border-bottom: .4mm solid #000; }
+.study-fit td.n, .study-fit td.c, .study-fit td.d { white-space: nowrap; }
+.study-fit td.c { text-align: right; }
+.study-fit .path { color: #555; font-size: .85em; display: block; }
+.study-fit .box-tick { display: inline-block; width: 1em; height: 1em; border: .3mm solid #000; }
+.study-fit .loop { font-size: .8em; font-weight: 700; }
+.study-fit .foot { margin-top: 1em; color: #555; font-size: .85em; }
+
+/* ---------- Print ---------- */
+@page { size: A4; margin: 10mm; }
+@media print {
+  html, body { background: #fff !important; color: #000 !important; margin: 0; padding: 0; }
+  .app-header, main, #toast, .skip { display: none !important; }
+  #print-root, body.tab-print.has-deck #print-root {
+    position: static !important; visibility: visible !important; left: auto;
+    max-width: none !important; margin: 0 !important; padding: 0 !important; overflow: visible !important;
+  }
+  body.print-study #print-root { display: none !important; }
+  body:not(.print-study) #study-print { display: none !important; }
+  body.print-study #study-print { position: static !important; visibility: visible !important; left: auto; }
+  .page-frame {
+    width: auto; padding: 0; margin: 0; box-shadow: none;
+    break-after: page; page-break-after: always;
+  }
+  .page-frame:last-child { break-after: auto; page-break-after: auto; }
+  .page-label { display: none !important; }
+  .pcard.overflow { outline: none; }
+}
+</style>
+</head>
+<body class="tab-prompt">
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="app-header">
+  <div class="wrap head-row">
+    <div class="brand">
+      <span class="logo" aria-hidden="true"></span>
+      <div>
+        <h1>Flashcard Template Maker</h1>
+        <p class="tag">Research prompt in, printable A4 flashcards out.</p>
+      </div>
+    </div>
+    <button id="themeBtn" class="btn ghost small" type="button" aria-label="Change colour theme">Theme: Auto</button>
+  </div>
+  <nav class="wrap steps" role="tablist" aria-label="Steps">
+    <button role="tab" type="button" data-tab="prompt" id="tabbtn-prompt" aria-controls="tab-prompt"><span class="num">1</span>Build prompt</button>
+    <button role="tab" type="button" data-tab="import" id="tabbtn-import" aria-controls="tab-import"><span class="num">2</span>Import</button>
+    <button role="tab" type="button" data-tab="cards" id="tabbtn-cards" aria-controls="tab-cards"><span class="num">3</span>Cards</button>
+    <button role="tab" type="button" data-tab="order" id="tabbtn-order" aria-controls="tab-order"><span class="num">4</span>Study order</button>
+    <button role="tab" type="button" data-tab="print" id="tabbtn-print" aria-controls="tab-print"><span class="num">5</span>Print</button>
+  </nav>
+</header>
+
+<main id="main" class="wrap">
+
+  <!-- ===== 1. Build prompt ===== -->
+  <section id="tab-prompt" role="tabpanel" aria-labelledby="tabbtn-prompt">
+    <div class="box">
+      <h2>How it works</h2>
+      <ol class="how-steps">
+        <li><span class="n">1</span><div><strong>Describe your subject</strong><p>Fill in the form below and copy the research prompt it builds for you.</p></div></li>
+        <li><span class="n">2</span><div><strong>Ask any LLM</strong><p>Paste the prompt into Claude, ChatGPT, Gemini or similar. A model with web search or a deep research mode gives the best results.</p></div></li>
+        <li><span class="n">3</span><div><strong>Import and print</strong><p>Paste or upload the JSON reply here. Preview, edit and filter the cards, then print them on A4 with cut lines.</p></div></li>
+      </ol>
+    </div>
+
+    <div class="grid-2">
+      <form id="promptForm" class="box" novalidate autocomplete="off">
+        <h2>Build the prompt</h2>
+        <label for="fSubject">Subject <span class="req">required</span></label>
+        <input id="fSubject" type="text" required placeholder="e.g. Rotator cuff anatomy or Australian contract law">
+        <p class="field-error" id="subjectErr" hidden>Enter a subject to study first.</p>
+
+        <div class="row">
+          <div>
+            <label for="fLevel">Level</label>
+            <select id="fLevel">
+              <option value="beginner">Beginner</option>
+              <option value="intermediate" selected>Intermediate</option>
+              <option value="advanced">Advanced</option>
+              <option value="exam prep">Exam prep</option>
+            </select>
+          </div>
+          <div>
+            <label for="fCount">Number of cards</label>
+            <input id="fCount" type="number" min="10" max="150" step="1" value="40" inputmode="numeric">
+            <p class="hint" id="countHint">Between 10 and 150.</p>
+          </div>
+        </div>
+
+        <fieldset>
+          <legend>Card types</legend>
+          <div class="checks">
+            <label class="check"><input type="checkbox" name="ctype" value="qa" checked><span><strong>Question and answer</strong><span>A question on the front, the answer on the back.</span></span></label>
+            <label class="check"><input type="checkbox" name="ctype" value="definition" checked><span><strong>Definition</strong><span>A term on the front, its definition on the back.</span></span></label>
+            <label class="check"><input type="checkbox" name="ctype" value="cloze" checked><span><strong>Cloze</strong><span>A sentence with a blank to fill in.</span></span></label>
+            <label class="check"><input type="checkbox" name="ctype" value="scenario" checked><span><strong>Scenario</strong><span>A short applied case with a question.</span></span></label>
+          </div>
+          <p class="field-error" id="typeErr" hidden>Pick at least one card type.</p>
+        </fieldset>
+
+        <label for="fExam">Align to an exam, course or syllabus <span class="opt">optional</span></label>
+        <input id="fExam" type="text" placeholder="e.g. USMLE Step 1, VCE Biology Units 3 and 4">
+
+        <label for="fNotes">Extra notes for the LLM <span class="opt">optional</span></label>
+        <textarea id="fNotes" rows="3" placeholder="e.g. Focus on clinical relevance. Use Australian spelling."></textarea>
+      </form>
+
+      <div class="box">
+        <div class="out-head">
+          <h2>Your research prompt</h2>
+          <button id="copyBtn" class="btn primary" type="button">Copy prompt</button>
+        </div>
+        <label for="promptOut" class="hint" style="margin-top:0;font-weight:400">The prompt updates as you type. It is read only here; copy it and paste it into your LLM.</label>
+        <textarea id="promptOut" readonly rows="18" spellcheck="false"></textarea>
+        <p class="hint" id="promptMeta"></p>
+        <p class="hint">Large decks (over about 80 cards) can hit an LLM's reply length limit. If the reply stops early, ask it to continue and paste both parts together, or ask for fewer cards. When you have the JSON, go to <a href="#" data-goto="import">Import</a>.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== 2. Import ===== -->
+  <section id="tab-import" role="tabpanel" aria-labelledby="tabbtn-import" hidden>
+    <div class="box">
+      <h2>Import the JSON</h2>
+      <p>Paste the LLM's reply below, or upload a .json file. Markdown code fences and stray text around the JSON are removed automatically.</p>
+      <label for="jsonIn" class="hint" style="margin-top:0">JSON from your LLM (you can also drop a file here)</label>
+      <textarea id="jsonIn" rows="14" spellcheck="false" placeholder='{ "schemaVersion": 1, "subject": "...", "topics": [...], "cards": [...] }'></textarea>
+      <div class="btn-row">
+        <button id="importBtn" class="btn primary" type="button">Validate and import</button>
+        <button id="uploadBtn" class="btn" type="button">Upload .json file</button>
+        <input type="file" id="fileIn" accept=".json,application/json,text/plain,.txt" hidden>
+        <button class="btn" type="button" data-sample>Try sample</button>
+        <button id="clearInBtn" class="btn ghost" type="button">Clear box</button>
+      </div>
+    </div>
+    <div id="importResult" aria-live="polite"></div>
+    <div id="savedNote"></div>
+  </section>
+
+  <!-- ===== 3. Cards ===== -->
+  <section id="tab-cards" role="tabpanel" aria-labelledby="tabbtn-cards" hidden>
+    <div class="box empty-state no-deck-only">
+      <h2>No deck loaded yet</h2>
+      <p>Import the JSON from your LLM, or load the built in sample to look around.</p>
+      <div class="btn-row" style="justify-content:center">
+        <button class="btn primary" type="button" data-goto="import">Go to Import</button>
+        <button class="btn" type="button" data-sample>Try sample</button>
+      </div>
+    </div>
+    <div class="has-deck-only">
+      <div class="box" id="deckHead"></div>
+      <div class="box">
+        <div class="filters">
+          <div><label for="filTopic">Topic</label><select id="filTopic"></select></div>
+          <div><label for="filType">Type</label><select id="filType">
+            <option value="">All types</option><option value="qa">Q&amp;A</option><option value="definition">Definition</option><option value="cloze">Cloze</option><option value="scenario">Scenario</option>
+          </select></div>
+          <div><label for="filDiff">Difficulty</label><select id="filDiff">
+            <option value="">All levels</option><option value="1">1 (core)</option><option value="2">2 (applied)</option><option value="3">3 (advanced)</option>
+          </select></div>
+          <div><label for="filText">Search</label><input id="filText" type="search" placeholder="Words on the card"></div>
+        </div>
+        <div class="btn-row">
+          <button class="btn small" type="button" id="selShown">Tick all shown</button>
+          <button class="btn small" type="button" id="unselShown">Untick all shown</button>
+          <button class="btn small" type="button" id="flipShown">Flip all shown</button>
+          <button class="btn small ghost" type="button" id="resetFilters">Reset filters</button>
+        </div>
+        <p class="count-line" id="cardCount"></p>
+      </div>
+      <div id="cardGrid" class="card-grid"></div>
+      <div id="noMatch" class="box empty-state" hidden><p>No cards match these filters.</p></div>
+    </div>
+  </section>
+
+  <!-- ===== 4. Study order ===== -->
+  <section id="tab-order" role="tabpanel" aria-labelledby="tabbtn-order" hidden>
+    <div class="box empty-state no-deck-only">
+      <h2>No deck loaded yet</h2>
+      <p>The study order is built from the topics and prerequisites in your JSON.</p>
+      <div class="btn-row" style="justify-content:center">
+        <button class="btn primary" type="button" data-goto="import">Go to Import</button>
+        <button class="btn" type="button" data-sample>Try sample</button>
+      </div>
+    </div>
+    <div class="box has-deck-only">
+      <div class="out-head">
+        <h2>Suggested study order</h2>
+        <button class="btn" type="button" data-print-study>Print study order</button>
+      </div>
+      <p class="hint" style="margin-top:0">Each topic comes after the topics it depends on. Ties follow the topic outline, so parents come before their subtopics where possible.</p>
+      <div id="cycleNote"></div>
+      <ol id="orderList" class="order-list"></ol>
+      <p id="unassignedNote" class="hint"></p>
+    </div>
+  </section>
+
+  <!-- ===== 5. Print ===== -->
+  <section id="tab-print" role="tabpanel" aria-labelledby="tabbtn-print" hidden>
+    <div class="box empty-state no-deck-only">
+      <h2>No deck loaded yet</h2>
+      <p>Import a deck to see the A4 print preview.</p>
+      <div class="btn-row" style="justify-content:center">
+        <button class="btn primary" type="button" data-goto="import">Go to Import</button>
+        <button class="btn" type="button" data-sample>Try sample</button>
+      </div>
+    </div>
+    <div class="box has-deck-only">
+      <h2>Print on A4</h2>
+      <div class="opt-grid">
+        <fieldset>
+          <legend>Print mode</legend>
+          <div class="radios">
+            <label class="check"><input type="radio" name="pmode" value="duplex" checked><span><strong>Double-sided</strong><span>Front pages and back pages alternate. Backs are mirrored so they line up.</span></span></label>
+            <label class="check"><input type="radio" name="pmode" value="fold"><span><strong>Single-sided fold</strong><span>Front and back side by side with a fold line. For printers without duplex.</span></span></label>
+          </div>
+        </fieldset>
+        <fieldset>
+          <legend>Cards per page</legend>
+          <div class="radios">
+            <label class="check"><input type="radio" name="playout" value="2x4" checked><span><strong>2 x 4</strong><span id="layoutDesc24">8 cards per page, about A7 size.</span></span></label>
+            <label class="check"><input type="radio" name="playout" value="3x3"><span><strong>3 x 3</strong><span id="layoutDesc33">9 smaller cards per page.</span></span></label>
+          </div>
+        </fieldset>
+        <fieldset>
+          <legend>Card order</legend>
+          <div class="radios">
+            <label class="check"><input type="radio" name="porder" value="deck" checked><span><strong>Deck order</strong><span>As they appear in the JSON.</span></span></label>
+            <label class="check"><input type="radio" name="porder" value="study"><span><strong>Study order</strong><span>Grouped by topic, following prerequisites.</span></span></label>
+          </div>
+        </fieldset>
+      </div>
+      <p class="instruction" id="printInstr"></p>
+      <p id="printSummary"></p>
+      <div id="printWarn"></div>
+      <div class="btn-row">
+        <button id="printBtn" class="btn primary" type="button">Print cards</button>
+        <button class="btn" type="button" data-print-study>Print study order</button>
+        <button class="btn ghost" type="button" data-goto="cards">Choose cards</button>
+      </div>
+      <h3 class="preview-title" style="margin-top:22px">Preview</h3>
+      <p class="hint" style="margin-top:0">This is exactly what prints. Red outlines (screen only) mark cards whose text is still too long at the smallest size.</p>
+    </div>
+  </section>
+</main>
+
+<div id="print-root" aria-label="Print preview"></div>
+<div id="study-print" aria-hidden="true"></div>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script type="application/json" id="sample-data">
+{
+  "schemaVersion": 1,
+  "subject": "Rotator cuff anatomy",
+  "level": "intermediate",
+  "summary": "The rotator cuff is a group of four muscles that stabilise the glenohumeral joint and rotate the humerus. Knowing their attachments, nerve supply and actions explains common shoulder injuries and the clinical tests used to find them.",
+  "topics": [
+    { "id": "t1", "name": "Shoulder", "parentId": null, "description": "The shoulder region and the joints that connect the upper limb to the trunk.", "prerequisites": [] },
+    { "id": "t2", "name": "Glenohumeral joint", "parentId": "t1", "description": "The ball and socket joint between the humeral head and the glenoid fossa of the scapula.", "prerequisites": [] },
+    { "id": "t3", "name": "Rotator cuff", "parentId": "t1", "description": "Four muscles whose tendons surround and stabilise the glenohumeral joint.", "prerequisites": ["t2"] },
+    { "id": "t4", "name": "Supraspinatus", "parentId": "t3", "description": "The superior cuff muscle that helps start abduction.", "prerequisites": [] },
+    { "id": "t5", "name": "Infraspinatus and teres minor", "parentId": "t3", "description": "The posterior cuff muscles that externally rotate the arm.", "prerequisites": [] },
+    { "id": "t6", "name": "Subscapularis", "parentId": "t3", "description": "The anterior cuff muscle and the main internal rotator of the cuff.", "prerequisites": [] },
+    { "id": "t7", "name": "Rotator cuff injury", "parentId": "t1", "description": "How cuff tendons are injured and how clinical tests point to the problem.", "prerequisites": ["t4", "t5", "t6"] }
+  ],
+  "cards": [
+    { "id": "c1", "type": "definition", "topicId": "t3", "front": "Rotator cuff", "back": "Four muscles (supraspinatus, infraspinatus, teres minor and subscapularis) whose tendons blend with the joint capsule and keep the humeral head centred in the glenoid.", "difficulty": 1, "prerequisites": [] },
+    { "id": "c2", "type": "qa", "topicId": "t2", "front": "Why is the glenohumeral joint the most mobile but least stable major joint?", "back": "A large humeral head sits against a small, shallow glenoid fossa. Bony contact is minimal, so the labrum, capsule, ligaments and rotator cuff provide most of its stability.", "difficulty": 2, "prerequisites": [] },
+    { "id": "c3", "type": "cloze", "topicId": "t2", "front": "The shallow glenoid fossa is deepened by a fibrocartilage rim called the _____.", "back": "glenoid labrum", "cloze": "The shallow glenoid fossa is deepened by a fibrocartilage rim called the {{glenoid labrum}}.", "difficulty": 1, "prerequisites": [] },
+    { "id": "c4", "type": "qa", "topicId": "t4", "front": "Which nerve supplies supraspinatus?", "back": "The suprascapular nerve (C5, C6), a branch of the upper trunk of the brachial plexus.", "difficulty": 1, "prerequisites": [] },
+    { "id": "c5", "type": "qa", "topicId": "t4", "front": "What is the main action of supraspinatus?", "back": "It starts abduction of the arm (roughly the first 15 degrees) and assists deltoid through the rest of abduction. It also helps hold the humeral head in the glenoid.", "difficulty": 1, "prerequisites": ["c1"] },
+    { "id": "c6", "type": "cloze", "topicId": "t5", "front": "Infraspinatus is supplied by the _____, while teres minor is supplied by the _____.", "back": "suprascapular nerve; axillary nerve", "cloze": "Infraspinatus is supplied by the {{suprascapular nerve}}, while teres minor is supplied by the {{axillary nerve}}.", "difficulty": 2, "prerequisites": ["c4"] },
+    { "id": "c7", "type": "definition", "topicId": "t5", "front": "External rotators of the rotator cuff", "back": "Infraspinatus and teres minor. Both arise from the posterior scapula and insert on the greater tubercle of the humerus.", "difficulty": 1, "prerequisites": [] },
+    { "id": "c8", "type": "qa", "topicId": "t6", "front": "Where does subscapularis insert?", "back": "On the lesser tubercle of the humerus. It is the only cuff muscle that inserts there; the other three use the greater tubercle.", "difficulty": 1, "prerequisites": [] },
+    { "id": "c9", "type": "cloze", "topicId": "t6", "front": "Subscapularis is the main _____ of the rotator cuff.", "back": "internal (medial) rotator", "cloze": "Subscapularis is the main {{internal (medial) rotator}} of the rotator cuff.", "difficulty": 1, "prerequisites": [] },
+    { "id": "c10", "type": "qa", "topicId": "t3", "front": "From superior to inferior, which rotator cuff muscles insert on the greater tubercle?", "back": "Supraspinatus, infraspinatus, then teres minor. Subscapularis inserts separately on the lesser tubercle.", "difficulty": 2, "prerequisites": ["c1", "c8"] },
+    { "id": "c11", "type": "scenario", "topicId": "t7", "front": "A 55 year old painter has shoulder pain lifting the arm sideways, worst between about 60 and 120 degrees. Which tendon is most likely affected?", "back": "Supraspinatus. A painful arc in mid abduction suggests subacromial impingement, where the supraspinatus tendon is squeezed under the acromion.", "difficulty": 2, "prerequisites": ["c5"] },
+    { "id": "c12", "type": "scenario", "topicId": "t7", "front": "After a fall, a patient cannot lift the hand away from the small of the back (positive lift-off test). Which muscle is likely torn?", "back": "Subscapularis. Lifting the hand off the back needs strong internal rotation, which is the main action of subscapularis.", "difficulty": 3, "prerequisites": ["c9"] },
+    { "id": "c13", "type": "definition", "topicId": "t7", "front": "Painful arc", "back": "Pain felt only through part of the range of active abduction, classically about 60 to 120 degrees. It suggests subacromial impingement or supraspinatus tendinopathy.", "difficulty": 2, "prerequisites": [] }
+  ],
+  "sources": [
+    { "title": "Rotator cuff (Wikipedia)", "url": "https://en.wikipedia.org/wiki/Rotator_cuff" },
+    { "title": "Shoulder joint (Wikipedia)", "url": "https://en.wikipedia.org/wiki/Shoulder_joint" },
+    { "title": "Supraspinatus muscle (Wikipedia)", "url": "https://en.wikipedia.org/wiki/Supraspinatus_muscle" }
+  ]
+}
+</script>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ================= Helpers ================= */
+  var $ = function (s, r) { return (r || document).querySelector(s); };
+  var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function str(v) {
+    if (typeof v === 'string') return v.trim();
+    if (typeof v === 'number' && isFinite(v)) return String(v);
+    return '';
+  }
+  function toList(v) {
+    if (Array.isArray(v)) return v.map(str).filter(Boolean);
+    if (typeof v === 'string' && v.trim()) return v.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+    return [];
+  }
+  function words(s) { return String(s || '').split(/\s+/).filter(Boolean).length; }
+  function listIds(ids) {
+    var shown = ids.slice(0, 8).join(', ');
+    return ids.length > 8 ? shown + ' and ' + (ids.length - 8) + ' more' : shown;
+  }
+  function plural(n, one, many) { return n + ' ' + (n === 1 ? one : (many || one + 's')); }
+  function clamp(n, lo, hi) { return Math.min(hi, Math.max(lo, n)); }
+
+  var store = {
+    get: function (k, d) { try { var v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+    set: function (k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } },
+    del: function (k) { try { localStorage.removeItem(k); } catch (e) { /* ignore */ } }
+  };
+
+  var toastTimer;
+  function toast(msg) {
+    var t = $('#toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { t.classList.remove('show'); }, 2200);
+  }
+
+  var TYPE_LABEL = { qa: 'Q&A', definition: 'Definition', cloze: 'Cloze', scenario: 'Scenario' };
+  var TYPE_ALIAS = {
+    'qa': 'qa', 'q&a': 'qa', 'q a': 'qa', 'q/a': 'qa', 'question': 'qa', 'question answer': 'qa', 'question and answer': 'qa',
+    'definition': 'definition', 'def': 'definition', 'term': 'definition', 'term definition': 'definition',
+    'cloze': 'cloze', 'fill in the blank': 'cloze', 'fill in blank': 'cloze', 'fill blank': 'cloze', 'gap fill': 'cloze',
+    'scenario': 'scenario', 'case': 'scenario', 'case study': 'scenario', 'vignette': 'scenario', 'clinical scenario': 'scenario', 'applied': 'scenario'
+  };
+  var CLOZE_TEST = /\{\{\s*[^{}]*?\S[^{}]*?\s*\}\}/;
+  function clozeBlank(s) { return s.replace(/\{\{\s*([^{}]+?)\s*\}\}/g, '_____'); }
+  function clozeAnswers(s) {
+    var out = [];
+    s.replace(/\{\{\s*([^{}]+?)\s*\}\}/g, function (m, a) { out.push(a); return m; });
+    return out;
+  }
+  function nl2br(html) { return html.replace(/\r?\n/g, '<br>'); }
+
+  /* ================= Prompt builder ================= */
+  var LEVELS = {
+    'beginner': {
+      label: 'Beginner',
+      guide: 'The learner is new to the subject. Use plain language, focus on core vocabulary, key facts and the big picture.',
+      diff: 'For this level, make most cards difficulty 1, some difficulty 2 and very few difficulty 3.'
+    },
+    'intermediate': {
+      label: 'Intermediate',
+      guide: 'The learner knows the basics. Focus on mechanisms, relationships between ideas and applying knowledge.',
+      diff: 'For this level, use a spread of difficulty 1, 2 and 3, leaning toward 2.'
+    },
+    'advanced': {
+      label: 'Advanced',
+      guide: 'The learner has a solid foundation. Focus on nuance, exceptions, integration across topics and current evidence or practice.',
+      diff: 'For this level, make most cards difficulty 2 or 3, and use difficulty 1 only for essential facts.'
+    },
+    'exam prep': {
+      label: 'Exam prep',
+      guide: 'The learner is preparing for an exam. Focus on high yield, frequently examined content, precise definitions, numbers worth memorising, common traps and classic question patterns.',
+      diff: 'For exam prep, mix all three difficulty levels in proportion to how the material is examined, and include frequently confused pairs.'
+    }
+  };
+
+  var SCHEMA_TEXT = [
+    '{',
+    '  "schemaVersion": 1,',
+    '  "subject": "string",',
+    '  "level": "string",',
+    '  "summary": "2 to 3 sentence overview of the subject",',
+    '  "topics": [',
+    '    {',
+    '      "id": "t1",',
+    '      "name": "string",',
+    '      "parentId": null or "topic id",',
+    '      "description": "one sentence",',
+    '      "prerequisites": ["topic ids"]',
+    '    }',
+    '  ],',
+    '  "cards": [',
+    '    {',
+    '      "id": "c1",',
+    '      "type": "qa | definition | cloze | scenario",',
+    '      "topicId": "topic id",',
+    '      "front": "string",',
+    '      "back": "string",',
+    '      "cloze": "for cloze only: full sentence with the answer wrapped as {{answer}}",',
+    '      "difficulty": 1 to 3,',
+    '      "prerequisites": ["card ids, optional"]',
+    '    }',
+    '  ],',
+    '  "sources": [{ "title": "string", "url": "string" }]',
+    '}'
+  ].join('\n');
+
+  function readForm() {
+    var count = parseInt($('#fCount').value, 10);
+    return {
+      subject: $('#fSubject').value.trim(),
+      level: $('#fLevel').value,
+      count: isNaN(count) ? 40 : clamp(count, 10, 150),
+      types: $$('input[name="ctype"]:checked').map(function (i) { return i.value; }),
+      exam: $('#fExam').value.trim(),
+      notes: $('#fNotes').value.trim()
+    };
+  }
+
+  function joinAnd(items) {
+    if (items.length <= 1) return items.join('');
+    return items.slice(0, -1).join(', ') + ' and ' + items[items.length - 1];
+  }
+
+  function buildPrompt(f) {
+    var lv = LEVELS[f.level] || LEVELS.intermediate;
+    var subject = f.subject || '[enter a subject above]';
+    var n = f.count;
+    var types = f.types.length ? f.types : ['qa', 'definition', 'cloze', 'scenario'];
+    var typeRule;
+    if (types.length === 4) typeRule = 'Use a balanced mix of all four card types (qa, definition, cloze and scenario), choosing the type that best suits each fact.';
+    else if (types.length === 1) typeRule = 'Use only the "' + types[0] + '" card type for every card.';
+    else typeRule = 'Use only these card types: ' + joinAnd(types.map(function (t) { return '"' + t + '"'; })) + '. Aim for a roughly even mix, choosing the type that best suits each fact.';
+    var tLo = clamp(Math.round(n / 5), 4, 30), tHi = clamp(Math.round(n / 2.5), 8, 50);
+
+    var typeLines = [];
+    if (types.indexOf('qa') >= 0) typeLines.push('  - qa: "front" is a question, "back" is the answer.');
+    if (types.indexOf('definition') >= 0) typeLines.push('  - definition: "front" is the term only, "back" is the definition.');
+    if (types.indexOf('cloze') >= 0) typeLines.push('  - cloze: put the full sentence in "cloze" with the answer wrapped in double curly braces, for example "The {{mitochondria}} produce most of the cell\'s ATP." Also set "front" to the same sentence with the answer replaced by _____ and "back" to the answer alone. Hide one key term per sentence.');
+    if (types.indexOf('scenario') >= 0) typeLines.push('  - scenario: "front" is a short applied case followed by a question, "back" is the answer with brief reasoning.');
+
+    var L = [];
+    L.push('You are an expert teacher and researcher. Research the subject below in depth and turn it into a high quality flashcard deck. The cards will be printed on small paper cards, so they must be accurate, short and self contained.');
+    L.push('');
+    L.push('SUBJECT: ' + subject);
+    L.push('LEVEL: ' + lv.label + '. ' + lv.guide);
+    L.push('NUMBER OF CARDS: exactly ' + n);
+    L.push('CARD TYPES: ' + types.join(', '));
+    if (f.exam) L.push('ALIGN TO: ' + f.exam + '. Find the official syllabus, learning outcomes or exam blueprint for this, cover what it lists, and use its terminology.');
+    if (f.notes) L.push('NOTES FROM THE LEARNER: ' + f.notes);
+    L.push('');
+    L.push('STEP 1. RESEARCH THE SUBJECT');
+    L.push('- Research the subject thoroughly before writing anything. If you have web search, browsing or a deep research mode, use it.');
+    L.push('- Prefer authoritative sources: standard textbooks, peer reviewed reviews and guidelines, official syllabi and exam bodies, professional and government bodies, legislation and other primary documents. Use popular websites only to cross check.');
+    L.push('- Where sources disagree or practice varies by country, use the most widely accepted position, or say which jurisdiction or guideline a card applies to.');
+    L.push('- Never invent facts, figures, citations or URLs. If you are unsure of something, leave it out.');
+    L.push('');
+    L.push('STEP 2. MAP THE SUBJECT');
+    L.push('- Before writing cards, map the subject into a hierarchy: subject > topics > subtopics (at most 3 levels deep).');
+    L.push('- Each topic and subtopic is one entry in "topics". Top level topics have "parentId": null. Subtopics set "parentId" to the id of their parent topic.');
+    L.push('- Aim for about ' + tLo + ' to ' + tHi + ' topics and subtopics in total, covering the whole subject at this level.');
+    L.push('');
+    L.push('STEP 3. IDENTIFY PREREQUISITES');
+    L.push('- For each topic, list in "prerequisites" the ids of other topics that must be understood before it. List only direct prerequisites. A subtopic does not need to list its own parent.');
+    L.push('- Prerequisites must never form a loop (for example t3 needs t5 and t5 needs t3).');
+    L.push('- A card may also list card ids in "prerequisites" when it clearly builds on another card. This is optional.');
+    L.push('');
+    L.push('STEP 4. WRITE THE CARDS');
+    L.push('- Write exactly ' + n + ' cards spread across the whole map, so every important topic has at least one card.');
+    L.push('- Weight the deck toward the most important material: foundational concepts, high yield facts, and ideas that are examined often or used often in practice. Spend fewer cards on minor details.');
+    L.push('- Attach each card to the most specific topic it belongs to, using "topicId".');
+    L.push('- Each card tests one idea. Keep the front short (no more than about 25 words) and the back concise (no more than about 60 words) so it fits on a printed card.');
+    L.push('- Make every card self contained. Do not refer to other cards.');
+    L.push('- Use plain text only: no markdown, HTML, LaTeX or bullet characters. Ordinary Unicode symbols are fine.');
+    L.push('- ' + typeRule);
+    L.push('- Card type rules:');
+    Array.prototype.push.apply(L, typeLines);
+    L.push('- "difficulty" is a whole number: 1 = core recall, 2 = understanding and application, 3 = advanced or integrative. ' + lv.diff);
+    L.push('- For card types other than cloze, leave out "cloze" or set it to an empty string.');
+    L.push('');
+    L.push('STEP 5. OUTPUT');
+    L.push('- Output ONLY the JSON object described below. Do not wrap it in markdown code fences and do not add any commentary before or after it.');
+    L.push('- It must be valid JSON: double quoted keys and strings, no trailing commas, no comments.');
+    L.push('- Use "schemaVersion": 1. Use ids "t1", "t2", ... for topics and "c1", "c2", ... for cards.');
+    L.push('- Every "topicId", "parentId" and prerequisite must refer to an id that exists in the file.');
+    L.push('- Set "subject" to ' + JSON.stringify(subject) + ' and "level" to ' + JSON.stringify(f.level) + '.');
+    L.push('- In "sources", list the main sources you actually relied on, with real URLs. Use an empty string for "url" if a source has no URL.');
+    L.push('');
+    L.push('JSON SCHEMA (version 1):');
+    L.push(SCHEMA_TEXT);
+    L.push('');
+    L.push('Before you reply, check that the JSON is valid, that there are exactly ' + n + ' cards, that every id reference exists, and that no card breaks the length limits.');
+    return L.join('\n');
+  }
+
+  function updatePrompt() {
+    var f = readForm();
+    $('#promptOut').value = buildPrompt(f);
+    $('#typeErr').hidden = f.types.length > 0;
+    if (f.subject) $('#subjectErr').hidden = true;
+    var raw = parseInt($('#fCount').value, 10);
+    $('#countHint').textContent = (!isNaN(raw) && (raw < 10 || raw > 150))
+      ? 'Using ' + f.count + '. The range is 10 to 150.' : 'Between 10 and 150.';
+    $('#promptMeta').textContent = plural(words($('#promptOut').value), 'word') + ' in the prompt.';
+    store.set('ftm:form', {
+      subject: $('#fSubject').value, level: f.level, count: $('#fCount').value,
+      types: f.types, exam: $('#fExam').value, notes: $('#fNotes').value
+    });
+  }
+
+  function copyText(text) {
+    if (navigator.clipboard && window.isSecureContext !== false) {
+      return navigator.clipboard.writeText(text).catch(function () { return legacyCopy(text); });
+    }
+    return legacyCopy(text);
+  }
+  function legacyCopy(text) {
+    return new Promise(function (resolve, reject) {
+      var ta = $('#promptOut');
+      var prevVal = ta.value;
+      ta.value = text;
+      ta.focus();
+      ta.select();
+      var ok = false;
+      try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+      ta.value = prevVal;
+      ok ? resolve() : reject(new Error('copy failed'));
+    });
+  }
+
+  /* ================= JSON parsing ================= */
+  // Index just past the first complete top level value starting at t[0], or -1 if it never closes.
+  function topLevelEnd(t) {
+    var depth = 0, inStr = false, escp = false;
+    for (var i = 0; i < t.length; i++) {
+      var ch = t[i];
+      if (inStr) {
+        if (escp) escp = false;
+        else if (ch === '\\') escp = true;
+        else if (ch === '"') inStr = false;
+        continue;
+      }
+      if (ch === '"') inStr = true;
+      else if (ch === '{' || ch === '[') depth++;
+      else if (ch === '}' || ch === ']') { depth--; if (depth === 0) return i + 1; }
+    }
+    return -1;
+  }
+  function stripTrailingCommas(t) {
+    var out = [], inStr = false, escp = false;
+    for (var i = 0; i < t.length; i++) {
+      var ch = t[i];
+      if (inStr) {
+        out.push(ch);
+        if (escp) escp = false;
+        else if (ch === '\\') escp = true;
+        else if (ch === '"') inStr = false;
+        continue;
+      }
+      if (ch === '"') { inStr = true; out.push(ch); continue; }
+      if (ch === ',') {
+        var j = i + 1;
+        while (j < t.length && /\s/.test(t[j])) j++;
+        if (t[j] === '}' || t[j] === ']') continue;
+      }
+      out.push(ch);
+    }
+    return out.join('');
+  }
+  function lineCol(text, pos) {
+    var before = text.slice(0, pos);
+    var line = before.split('\n').length;
+    return { line: line, col: pos - before.lastIndexOf('\n') };
+  }
+
+  function parseInput(raw) {
+    var notes = [];
+    var text = String(raw || '');
+    var t = text, base = 0;
+    var lead = t.length - t.replace(/^[\s﻿]+/, '').length;
+    t = t.slice(lead).replace(/\s+$/, ''); base += lead;
+    if (!t) return { error: { title: 'Nothing to import yet', body: '<p>Paste the JSON reply from your LLM into the box, upload a .json file, or try the sample.</p>' } };
+
+    var fenceRe = /```[^\n`]*\n?([\s\S]*?)```/g, m, fenced = null;
+    while ((m = fenceRe.exec(t))) {
+      if (m[1].indexOf('{') >= 0) { fenced = { content: m[1], at: m.index + m[0].indexOf(m[1]) }; break; }
+    }
+    if (fenced) {
+      base += fenced.at; t = fenced.content;
+      notes.push('Removed markdown code fences around the JSON.');
+    } else if (/^```/.test(t)) {
+      var nl = t.indexOf('\n');
+      var cut = nl >= 0 ? nl + 1 : 3;
+      base += cut; t = t.slice(cut);
+      notes.push('Removed an opening markdown code fence.');
+    }
+    var first = t.indexOf('{');
+    if (first < 0) {
+      return { error: { title: 'No JSON object found', body: '<p>The text does not contain a JSON object (it should start with <code>{</code>). Check that you copied the whole reply from the LLM.</p>' } };
+    }
+    if (t.slice(0, first).trim()) notes.push('Ignored text before the JSON.');
+    base += first; t = t.slice(first);
+    var end = topLevelEnd(t);
+    var truncated = end < 0;
+    if (end > 0 && t.slice(end).trim()) { t = t.slice(0, end); notes.push('Ignored text after the JSON.'); }
+
+    try {
+      return { value: JSON.parse(t), notes: notes };
+    } catch (e1) {
+      try {
+        var fixed = stripTrailingCommas(t);
+        if (fixed !== t) {
+          var v = JSON.parse(fixed);
+          notes.push('Removed trailing commas, which are not allowed in JSON.');
+          return { value: v, notes: notes };
+        }
+      } catch (e2) { /* report the original error */ }
+      return { error: describeJsonError(e1, t, base, text, truncated) };
+    }
+  }
+
+  function describeJsonError(err, t, base, original, truncated) {
+    var msg = String(err && err.message || err);
+    var pos = null;
+    var mm = /line (\d+) column (\d+)/i.exec(msg);
+    if (mm) {
+      var lines = t.split('\n'), ln = +mm[1], col = +mm[2], p = 0;
+      for (var i = 0; i < ln - 1 && i < lines.length; i++) p += lines[i].length + 1;
+      pos = p + col - 1;
+    } else if ((mm = /position (\d+)/i.exec(msg))) {
+      pos = +mm[1];
+    }
+    var body = '';
+    var where = '';
+    var absPos = null;
+    if (pos != null) {
+      absPos = clamp(base + pos, 0, original.length);
+      var lc = lineCol(original, absPos);
+      where = ' near line ' + lc.line + ', column ' + lc.col;
+      var lineText = original.split('\n')[lc.line - 1] || '';
+      var start = Math.max(0, lc.col - 70);
+      var seg = lineText.slice(start, start + 140).replace(/\t/g, ' ');
+      var caret = new Array(Math.max(0, lc.col - 1 - start) + 1).join(' ') + '^';
+      body += '<pre>' + esc(seg) + '\n' + esc(caret) + '</pre>';
+    }
+    var tip;
+    var likelyComma = /expected ',' or|unexpected string|after property value|after array element/i.test(msg);
+    if (likelyComma && !truncated) {
+      body += '<p><strong>A comma is probably missing just before the marked spot</strong> (between two items or two properties).</p>';
+    }
+    if (truncated) {
+      tip = '<p><strong>The JSON stops before it is finished.</strong> The LLM probably hit its reply length limit. Ask it to continue and paste both parts together, or generate the deck again with fewer cards.</p>';
+    } else {
+      tip = '<p>Common causes: a missing comma between items, a quote mark inside text that is not escaped (it should be written <code>\\"</code>), or a comment. You can ask the LLM: <em>"Your JSON is invalid' + esc(where) + '. Return the full corrected JSON only."</em></p>';
+    }
+    return {
+      title: 'The JSON could not be read' + where,
+      body: body + tip + '<p class="hint">Technical detail: ' + esc(msg) + '</p>',
+      pos: absPos
+    };
+  }
+
+  /* ================= Validation ================= */
+  function uniqueId(prefix, taken) {
+    var n = 1;
+    while (taken.has(prefix + n)) n++;
+    return prefix + n;
+  }
+
+  function validateDeck(obj, opts) {
+    opts = opts || {};
+    var errors = [], warnings = [];
+    function W(m) { warnings.push(m); }
+    function E(m) { errors.push(m); }
+
+    if (Array.isArray(obj) && obj.length && typeof obj[0] === 'object' && obj[0] && ('front' in obj[0] || 'cloze' in obj[0])) {
+      W('The JSON is a list rather than an object, so it was read as a list of cards with no topics.');
+      obj = { cards: obj };
+    }
+    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) {
+      E('The JSON must be an object with "subject", "topics" and "cards". This file contains ' + (Array.isArray(obj) ? 'a list' : 'a ' + typeof obj) + ' instead.');
+      return { fatal: true, errors: errors, warnings: warnings };
+    }
+
+    if (obj.schemaVersion == null) W('No "schemaVersion" was given. It was read as version 1.');
+    else if (Number(obj.schemaVersion) !== 1) W('The file says schemaVersion ' + str(obj.schemaVersion) + '. This app reads version 1, so some fields may be ignored.');
+
+    var subject = str(obj.subject);
+    if (!subject) { subject = 'Untitled deck'; W('No "subject" was given, so the deck is called "Untitled deck".'); }
+
+    /* ---- Topics ---- */
+    var rawTopics = obj.topics;
+    if (rawTopics == null) { W('There is no "topics" list, so cards will have no breadcrumbs or study order.'); rawTopics = []; }
+    else if (!Array.isArray(rawTopics)) { W('"topics" should be a list. It was ignored.'); rawTopics = []; }
+    var topics = [], tIds = new Set();
+    var explicitT = new Set(rawTopics.map(function (t) { return t && str(t.id); }).filter(Boolean));
+    rawTopics.forEach(function (rt, i) {
+      if (!rt || typeof rt !== 'object' || Array.isArray(rt)) { W('Topic ' + (i + 1) + ' is not a topic object and was skipped.'); return; }
+      var name = str(rt.name) || str(rt.title);
+      var id = str(rt.id);
+      if (!id) {
+        id = uniqueId('t', new Set(Array.from(tIds).concat(Array.from(explicitT))));
+        W('Topic ' + (i + 1) + (name ? ' ("' + name + '")' : '') + ' has no id. It was given the id ' + id + '.');
+      } else if (tIds.has(id)) {
+        var nid = uniqueId(id + '-', tIds);
+        W('Topic id ' + id + ' is used more than once. The repeat' + (name ? ' ("' + name + '")' : '') + ' was renamed ' + nid + '.');
+        id = nid;
+      }
+      if (!name) { name = id; W('Topic ' + id + ' has no name, so its id is shown instead.'); }
+      tIds.add(id);
+      topics.push({
+        id: id, name: name,
+        parentId: (rt.parentId == null || str(rt.parentId) === '') ? null : str(rt.parentId),
+        description: str(rt.description),
+        prerequisites: toList(rt.prerequisites)
+      });
+    });
+    var tById = new Map(topics.map(function (t) { return [t.id, t]; }));
+    topics.forEach(function (t) {
+      if (t.parentId === null) return;
+      if (t.parentId === t.id) { W('Topic ' + t.id + ' ("' + t.name + '") lists itself as its parent. It was made a top level topic.'); t.parentId = null; }
+      else if (!tById.has(t.parentId)) { W('Topic ' + t.id + ' ("' + t.name + '") has parent ' + t.parentId + ', which does not exist. It was made a top level topic.'); t.parentId = null; }
+    });
+    topics.forEach(function (t) {
+      var seen = new Set([t.id]), p = t.parentId;
+      while (p) {
+        if (p === t.id) { W('The topic outline loops back on itself at ' + t.id + ' ("' + t.name + '"). It was made a top level topic.'); t.parentId = null; break; }
+        if (seen.has(p)) break;
+        seen.add(p);
+        p = tById.get(p).parentId;
+      }
+    });
+    topics.forEach(function (t) {
+      var keep = [];
+      t.prerequisites.forEach(function (p) {
+        if (p === t.id) W('Topic ' + t.id + ' ("' + t.name + '") lists itself as a prerequisite. That was removed.');
+        else if (!tById.has(p)) W('Topic ' + t.id + ' ("' + t.name + '") lists prerequisite ' + p + ', which does not exist. It was removed.');
+        else if (keep.indexOf(p) < 0) keep.push(p);
+      });
+      t.prerequisites = keep;
+    });
+
+    /* ---- Cards ---- */
+    var rawCards = obj.cards;
+    if (rawCards == null) { E('There is no "cards" list in the JSON.'); return { fatal: true, errors: errors, warnings: warnings }; }
+    if (!Array.isArray(rawCards)) { E('"cards" should be a list of card objects.'); return { fatal: true, errors: errors, warnings: warnings }; }
+    if (!rawCards.length) { E('The "cards" list is empty.'); return { fatal: true, errors: errors, warnings: warnings }; }
+
+    var explicitC = new Set(rawCards.map(function (c) { return c && str(c.id); }).filter(Boolean));
+    var cIds = new Set(), cards = [];
+    var noDiff = [], badDiff = [], noTopic = [], longFront = [], longBack = [], noType = [];
+    rawCards.forEach(function (rc, i) {
+      var label = (rc && typeof rc === 'object' && str(rc.id)) ? 'Card ' + str(rc.id) : 'Card ' + (i + 1) + ' in the list';
+      if (!rc || typeof rc !== 'object' || Array.isArray(rc)) { E(label + ' is not a card object, so it was skipped.'); return; }
+      var id = str(rc.id);
+      if (!id) {
+        id = uniqueId('c', new Set(Array.from(cIds).concat(Array.from(explicitC))));
+        W(label + ' has no id. It was given the id ' + id + '.');
+      } else if (cIds.has(id)) {
+        var nid = uniqueId(id + '-', cIds);
+        W('Card id ' + id + ' is used more than once. The repeat was renamed ' + nid + '.');
+        id = nid;
+      }
+      label = 'Card ' + id;
+
+      var rawType = str(rc.type).toLowerCase().replace(/[\s_\-]+/g, ' ').trim();
+      var type = TYPE_ALIAS[rawType];
+      var front = str(rc.front), back = str(rc.back), cloze = str(rc.cloze);
+      if (!rawType) {
+        if (CLOZE_TEST.test(cloze)) type = 'cloze';
+        else { noType.push(id); type = 'qa'; }
+      } else if (!type) { W(label + ' has an unknown type "' + str(rc.type) + '", so it is treated as qa.'); type = 'qa'; }
+
+      if (type === 'cloze') {
+        if (!CLOZE_TEST.test(cloze) && CLOZE_TEST.test(front)) cloze = front;
+        if (CLOZE_TEST.test(cloze)) {
+          if (!front || CLOZE_TEST.test(front)) front = clozeBlank(cloze);
+          if (!back) back = clozeAnswers(cloze).join('; ');
+        } else if (front && back) {
+          W(label + ' is a cloze card without a {{answer}} sentence, so it is shown as a question and answer.');
+          type = 'qa'; cloze = '';
+        } else {
+          E(label + ' is a cloze card with no usable sentence (the answer must be wrapped in {{ }}), so it was skipped.');
+          return;
+        }
+      } else {
+        if (!front && !back) { E(label + ' has no front or back text, so it was skipped.'); return; }
+        if (!front) { E(label + ' has no front text, so it was skipped.'); return; }
+        if (!back) { E(label + ' has no back text, so it was skipped.'); return; }
+        cloze = '';
+      }
+
+      var topicId = str(rc.topicId) || null;
+      if (topicId && !tById.has(topicId)) {
+        W(label + ' references topic ' + topicId + ' which does not exist. It is listed under "Unassigned".');
+        topicId = null;
+      } else if (!topicId && topics.length) noTopic.push(id);
+
+      var d = rc.difficulty;
+      if (typeof d === 'string') {
+        var k = d.trim().toLowerCase();
+        d = ({ easy: 1, low: 1, basic: 1, medium: 2, moderate: 2, hard: 3, high: 3, difficult: 3 })[k] || (k === '' ? null : Number(k));
+      }
+      if (d == null || isNaN(Number(d))) { noDiff.push(id); d = 2; }
+      else {
+        d = Math.round(Number(d));
+        if (d < 1 || d > 3) { badDiff.push(id); d = clamp(d, 1, 3); }
+      }
+
+      if (words(front) > 25) longFront.push(id);
+      if (words(type === 'cloze' ? cloze : back) > 60) longBack.push(id);
+
+      cIds.add(id);
+      cards.push({
+        id: id, type: type, topicId: topicId, front: front, back: back, cloze: cloze,
+        difficulty: d, prerequisites: toList(rc.prerequisites)
+      });
+    });
+
+    if (!cards.length) {
+      E('None of the cards could be used.');
+      return { fatal: true, errors: errors, warnings: warnings };
+    }
+
+    var badPre = [];
+    cards.forEach(function (c) {
+      var keep = [];
+      c.prerequisites.forEach(function (p) {
+        if (p === c.id) return;
+        if (!cIds.has(p)) badPre.push(c.id + ' needs ' + p);
+        else if (keep.indexOf(p) < 0) keep.push(p);
+      });
+      c.prerequisites = keep;
+    });
+
+    if (noType.length) W(plural(noType.length, 'card has', 'cards have') + ' no type (' + listIds(noType) + '), so they are treated as qa.');
+    if (noTopic.length) W(plural(noTopic.length, 'card has', 'cards have') + ' no topicId (' + listIds(noTopic) + '). They are listed under "Unassigned".');
+    if (noDiff.length) W(plural(noDiff.length, 'card has', 'cards have') + ' no difficulty (' + listIds(noDiff) + '). They were set to 2.');
+    if (badDiff.length) W(plural(badDiff.length, 'card has', 'cards have') + ' a difficulty outside 1 to 3 (' + listIds(badDiff) + '). It was adjusted to fit.');
+    if (badPre.length) W(plural(badPre.length, 'card prerequisite points', 'card prerequisites point') + ' to cards that do not exist and ' + (badPre.length === 1 ? 'was' : 'were') + ' removed (' + listIds(badPre) + ').');
+    if (longFront.length) W(plural(longFront.length, 'card front is', 'card fronts are') + ' longer than 25 words (' + listIds(longFront) + '). They will print in smaller text.');
+    if (longBack.length) W(plural(longBack.length, 'card back is', 'card backs are') + ' longer than 60 words (' + listIds(longBack) + '). They will print in smaller text.');
+
+    var so = computeStudyOrder(topics, new Map(topics.map(function (t, i) { return [t.id, i]; })));
+    so.cycles.forEach(function (cyc) {
+      W('Prerequisite loop between topics: ' + cyc.map(function (id) { return tById.get(id).name + ' (' + id + ')'; }).join(', ') + '. The study order places them in outline order and flags them.');
+    });
+
+    var sources = [];
+    if (obj.sources != null && !Array.isArray(obj.sources)) W('"sources" should be a list. It was ignored.');
+    (Array.isArray(obj.sources) ? obj.sources : []).forEach(function (s) {
+      if (typeof s === 'string' && s.trim()) {
+        var isUrl = /^https?:\/\//i.test(s.trim());
+        sources.push({ title: s.trim(), url: isUrl ? s.trim() : '' });
+      } else if (s && typeof s === 'object') {
+        var title = str(s.title) || str(s.name) || str(s.url);
+        if (title) sources.push({ title: title, url: str(s.url) });
+      }
+    });
+
+    if (opts.expectCount && opts.expectSubject && opts.expectSubject.toLowerCase() === subject.toLowerCase() && opts.expectCount !== cards.length) {
+      W('You asked for ' + opts.expectCount + ' cards and ' + cards.length + ' could be used.');
+    }
+
+    return {
+      fatal: false, errors: errors, warnings: warnings,
+      deck: {
+        schemaVersion: 1, subject: subject, level: str(obj.level), summary: str(obj.summary),
+        topics: topics, cards: cards, sources: sources
+      }
+    };
+  }
+
+  /* ================= Study order (topological sort) ================= */
+  function computeStudyOrder(topics, treeIdx) {
+    var byId = new Map(topics.map(function (t) { return [t.id, t]; }));
+    var out = new Map();
+    topics.forEach(function (t) { out.set(t.id, []); });
+    topics.forEach(function (t) { t.prerequisites.forEach(function (p) { if (out.has(p)) out.get(p).push(t.id); }); });
+
+    // Tarjan's strongly connected components to find prerequisite loops.
+    var index = 0, idx = new Map(), low = new Map(), onStack = new Set(), stack = [], comps = [];
+    function strong(v) {
+      idx.set(v, index); low.set(v, index); index++;
+      stack.push(v); onStack.add(v);
+      out.get(v).forEach(function (w) {
+        if (!idx.has(w)) { strong(w); low.set(v, Math.min(low.get(v), low.get(w))); }
+        else if (onStack.has(w)) low.set(v, Math.min(low.get(v), idx.get(w)));
+      });
+      if (low.get(v) === idx.get(v)) {
+        var comp = [], w;
+        do { w = stack.pop(); onStack.delete(w); comp.push(w); } while (w !== v);
+        comps.push(comp);
+      }
+    }
+    topics.forEach(function (t) { if (!idx.has(t.id)) strong(t.id); });
+    var cycles = comps.filter(function (c) { return c.length > 1; }).map(function (c) {
+      return c.sort(function (a, b) { return treeIdx.get(a) - treeIdx.get(b); });
+    });
+    var inCycle = new Set();
+    cycles.forEach(function (c) { c.forEach(function (id) { inCycle.add(id); }); });
+
+    // Kahn's algorithm. Ties go to outline order, and a topic waits for its parent when it can.
+    var done = new Set(), order = [], remaining = topics.map(function (t) { return t.id; });
+    function unmet(id) { return byId.get(id).prerequisites.filter(function (p) { return !done.has(p); }).length; }
+    function byTree(a, b) { return treeIdx.get(a) - treeIdx.get(b); }
+    while (remaining.length) {
+      var cand = remaining.filter(function (id) {
+        var par = byId.get(id).parentId;
+        return unmet(id) === 0 && (!par || done.has(par));
+      });
+      if (!cand.length) cand = remaining.filter(function (id) { return unmet(id) === 0; });
+      if (!cand.length) {
+        cand = remaining.filter(function (id) { return inCycle.has(id); });
+        if (!cand.length) cand = remaining.slice();
+      }
+      cand.sort(byTree);
+      var pick = cand[0];
+      done.add(pick); order.push(pick);
+      remaining.splice(remaining.indexOf(pick), 1);
+    }
+    var pos = new Map(order.map(function (id, i) { return [id, i]; }));
+    return { order: order, out: out, cycles: cycles, inCycle: inCycle, pos: pos };
+  }
+
+  /* ================= State ================= */
+  var state = {
+    deck: null,
+    ix: null,
+    excluded: new Set(),
+    flipped: new Set(),
+    editing: null,
+    dirty: false,
+    filters: { topic: '', type: '', diff: '', q: '' },
+    print: { mode: 'duplex', layout: '2x4', order: 'deck' },
+    printDirty: true,
+    pending: null,
+    tab: 'prompt'
+  };
+
+  function computeIndex() {
+    var d = state.deck;
+    var tById = new Map(d.topics.map(function (t) { return [t.id, t]; }));
+    var children = new Map(), roots = [];
+    d.topics.forEach(function (t) { children.set(t.id, []); });
+    d.topics.forEach(function (t) { if (t.parentId && children.has(t.parentId)) children.get(t.parentId).push(t.id); else roots.push(t.id); });
+    var treeOrder = [], depth = new Map(), seen = new Set();
+    function walk(id, dep) {
+      if (seen.has(id)) return;
+      seen.add(id); treeOrder.push(id); depth.set(id, dep);
+      children.get(id).forEach(function (c) { walk(c, dep + 1); });
+    }
+    roots.forEach(function (r) { walk(r, 0); });
+    d.topics.forEach(function (t) { walk(t.id, 0); });
+    var treeIdx = new Map(treeOrder.map(function (id, i) { return [id, i]; }));
+    var so = computeStudyOrder(d.topics, treeIdx);
+    var cardNum = new Map(d.cards.map(function (c, i) { return [c.id, i + 1]; }));
+    var direct = new Map();
+    d.cards.forEach(function (c) { var k = c.topicId || ''; direct.set(k, (direct.get(k) || 0) + 1); });
+    state.ix = { tById: tById, children: children, roots: roots, treeOrder: treeOrder, treeIdx: treeIdx, depth: depth, so: so, cardNum: cardNum, direct: direct };
+  }
+  function topicPath(id) {
+    var out = [], seen = new Set(), cur = id ? state.ix.tById.get(id) : null;
+    while (cur && !seen.has(cur.id)) { seen.add(cur.id); out.unshift(cur.name); cur = cur.parentId ? state.ix.tById.get(cur.parentId) : null; }
+    return out;
+  }
+  function descendants(id) {
+    var res = new Set(), st = [id];
+    while (st.length) { var x = st.pop(); if (res.has(x)) continue; res.add(x); (state.ix.children.get(x) || []).forEach(function (c) { st.push(c); }); }
+    return res;
+  }
+  function topicName(id) { var t = state.ix.tById.get(id); return t ? t.name : id; }
+  function learnFirst(card) {
+    var parts = [];
+    var t = card.topicId ? state.ix.tById.get(card.topicId) : null;
+    if (t) t.prerequisites.forEach(function (p) { parts.push(topicName(p)); });
+    var nums = card.prerequisites.map(function (cid) { return state.ix.cardNum.get(cid); }).filter(Boolean);
+    if (nums.length) parts.push((nums.length === 1 ? 'card #' : 'cards #') + nums.join(', #'));
+    return parts.join('; ');
+  }
+  function faceHtml(card) {
+    if (card.type === 'cloze' && CLOZE_TEST.test(card.cloze)) {
+      var e = esc(card.cloze);
+      return {
+        front: nl2br(e.replace(/\{\{\s*([^{}]+?)\s*\}\}/g, '_____')),
+        back: nl2br(e.replace(/\{\{\s*([^{}]+?)\s*\}\}/g, '<b>$1</b>'))
+      };
+    }
+    return { front: nl2br(esc(card.front)), back: nl2br(esc(card.back)) };
+  }
+  function diffDots(d) { return '●●●'.slice(0, d) + '○○○'.slice(0, 3 - d); }
+
+  function saveDeck() {
+    if (!state.deck) { store.del('ftm:deck'); return; }
+    var ok = store.set('ftm:deck', { deck: state.deck, excluded: Array.from(state.excluded), dirty: state.dirty });
+    $('#savedNote').innerHTML = ok ? '' : '<div class="msg warn"><h3>Not saved in this browser</h3><p>Your browser blocked local storage, so the deck will be lost when you close this page. Use Export JSON on the Cards tab to keep a copy.</p></div>';
+  }
+
+  function setDeck(deck, opts) {
+    opts = opts || {};
+    state.deck = deck;
+    state.excluded = new Set(opts.excluded || []);
+    state.flipped = new Set();
+    state.editing = null;
+    state.dirty = !!opts.dirty;
+    state.filters = { topic: '', type: '', diff: '', q: '' };
+    computeIndex();
+    document.body.classList.toggle('has-deck', true);
+    if (!opts.restored) saveDeck();
+    renderDeckHead();
+    renderFilters();
+    renderCards();
+    renderOrder();
+    state.printDirty = true;
+    if (state.tab === 'print') buildPrint();
+  }
+
+  /* ================= Import UI ================= */
+  function renderList(items, cap) {
+    cap = cap || 40;
+    var head = items.slice(0, cap).map(function (m) { return '<li>' + esc(m) + '</li>'; }).join('');
+    var rest = items.slice(cap).map(function (m) { return '<li>' + esc(m) + '</li>'; }).join('');
+    return '<ul>' + head + '</ul>' + (rest ? '<details><summary>Show ' + (items.length - cap) + ' more</summary><ul>' + rest + '</ul></details>' : '');
+  }
+
+  function runImport(text, opts) {
+    opts = opts || {};
+    var out = $('#importResult');
+    var p = parseInput(text);
+    if (p.error) {
+      out.innerHTML = '<div class="msg err" tabindex="-1"><h3>' + esc(p.error.title) + '</h3>' + p.error.body +
+        (p.error.pos != null ? '<div class="btn-row"><button class="btn small" type="button" id="jumpErr">Show me in the box</button></div>' : '') + '</div>';
+      if (p.error.pos != null) {
+        $('#jumpErr').addEventListener('click', function () {
+          var ta = $('#jsonIn');
+          ta.focus();
+          ta.setSelectionRange(p.error.pos, Math.min(ta.value.length, p.error.pos + 1));
+          var lc = lineCol(ta.value, p.error.pos);
+          var lh = parseFloat(getComputedStyle(ta).lineHeight) || 20;
+          ta.scrollTop = Math.max(0, (lc.line - 4) * lh);
+        });
+      }
+      out.firstChild.focus();
+      return;
+    }
+    var f = readForm();
+    var v = validateDeck(p.value, { expectCount: f.count, expectSubject: f.subject });
+    var notesHtml = p.notes.length ? '<div class="msg info"><h3>Tidied up</h3>' + renderList(p.notes) + '</div>' : '';
+    var warnHtml = v.warnings.length ? '<div class="msg warn"><h3>' + plural(v.warnings.length, 'warning') + '</h3><p>The deck can still be used. These were fixed or worked around:</p>' + renderList(v.warnings) + '</div>' : '';
+    var errHtml = v.errors.length ? '<div class="msg err"><h3>' + plural(v.errors.length, 'problem') + ' found</h3>' + renderList(v.errors) +
+      (!v.fatal ? '<p>' + plural(v.deck.cards.length, 'card is', 'cards are') + ' fine. You can fix the JSON and import again, or import the good cards now.</p><div class="btn-row"><button class="btn primary small" type="button" id="importAnyway">Import the ' + plural(v.deck.cards.length, 'good card') + '</button></div>' : '<p>Nothing could be imported. Fix the JSON and try again.</p>') +
+      '</div>' : '';
+
+    if (v.fatal || (v.errors.length && !opts.force)) {
+      state.pending = v.fatal ? null : v.deck;
+      out.innerHTML = errHtml + warnHtml + notesHtml;
+      var ia = $('#importAnyway');
+      if (ia) ia.addEventListener('click', function () { runImport(text, { force: true, sample: opts.sample }); });
+      out.firstChild.setAttribute('tabindex', '-1');
+      out.firstChild.focus();
+      return;
+    }
+    if (state.deck && state.dirty && !opts.sample && !confirm('Replace the current deck? Your edits to "' + state.deck.subject + '" will be lost unless you exported them.')) return;
+    if (state.deck && state.dirty && opts.sample && !confirm('Load the sample and replace your current edited deck?')) return;
+
+    setDeck(v.deck);
+    var d = v.deck;
+    var okHtml = '<div class="msg ok" tabindex="-1"><h3>Imported ' + plural(d.cards.length, 'card') + ' in ' + plural(d.topics.length, 'topic') + '</h3>' +
+      '<p>' + esc(d.subject) + (opts.sample ? '. This is the built in sample, for trying the app.' : '.') +
+      (v.errors.length ? ' ' + plural(v.errors.length, 'card was', 'cards were') + ' skipped.' : '') + '</p>' +
+      '<div class="btn-row"><button class="btn primary small" type="button" data-goto="cards">View cards</button><button class="btn small" type="button" data-goto="order">Study order</button><button class="btn small" type="button" data-goto="print">Print</button></div></div>';
+    out.innerHTML = okHtml + (v.errors.length ? errHtml.replace(/<div class="btn-row">[\s\S]*?<\/div>/, '') : '') + warnHtml + notesHtml;
+    out.firstChild.focus();
+  }
+
+  /* ================= Cards tab ================= */
+  function renderDeckHead() {
+    var d = state.deck;
+    var counts = {};
+    d.cards.forEach(function (c) { counts[c.type] = (counts[c.type] || 0) + 1; });
+    var mix = ['qa', 'definition', 'cloze', 'scenario'].filter(function (t) { return counts[t]; })
+      .map(function (t) { return counts[t] + ' ' + TYPE_LABEL[t]; }).join(', ');
+    var src = d.sources.length ? '<details><summary>Sources (' + d.sources.length + ')</summary><ul>' + d.sources.map(function (s) {
+      var safe = /^https?:\/\//i.test(s.url);
+      return '<li>' + (safe ? '<a href="' + esc(s.url) + '" target="_blank" rel="noopener noreferrer">' + esc(s.title) + '</a>' : esc(s.title) + (s.url ? ' (' + esc(s.url) + ')' : '')) + '</li>';
+    }).join('') + '</ul></details>' : '';
+    $('#deckHead').innerHTML =
+      '<div class="deck-title"><h2>' + esc(d.subject) + '</h2>' + (d.level ? '<span class="chip">' + esc(d.level) + '</span>' : '') + '</div>' +
+      (d.summary ? '<p style="margin-top:8px">' + esc(d.summary) + '</p>' : '') +
+      '<p class="stats">' + plural(d.cards.length, 'card') + ' in ' + plural(d.topics.length, 'topic') + (mix ? ': ' + esc(mix) : '') + '.</p>' + src +
+      '<div class="btn-row"><button class="btn" type="button" id="exportBtn">Export JSON</button><button class="btn ghost" type="button" data-goto="print">Go to print</button></div>';
+  }
+
+  function renderFilters() {
+    var sel = $('#filTopic');
+    var opts = ['<option value="">All topics</option>'];
+    state.ix.treeOrder.forEach(function (id) {
+      var dep = state.ix.depth.get(id) || 0;
+      opts.push('<option value="' + esc(id) + '">' + new Array(dep + 1).join('   ') + esc(topicName(id)) + '</option>');
+    });
+    if (state.ix.direct.get('')) opts.push('<option value="__none">Unassigned</option>');
+    sel.innerHTML = opts.join('');
+    sel.value = state.filters.topic;
+    $('#filType').value = state.filters.type;
+    $('#filDiff').value = state.filters.diff;
+    $('#filText').value = state.filters.q;
+  }
+
+  function filteredCards() {
+    var f = state.filters, topicSet = null;
+    if (f.topic && f.topic !== '__none') topicSet = descendants(f.topic);
+    var q = f.q.trim().toLowerCase();
+    return state.deck.cards.filter(function (c) {
+      if (f.topic === '__none' && c.topicId) return false;
+      if (topicSet && !topicSet.has(c.topicId)) return false;
+      if (f.type && c.type !== f.type) return false;
+      if (f.diff && String(c.difficulty) !== f.diff) return false;
+      if (q && (c.front + ' ' + c.back + ' ' + c.cloze).toLowerCase().indexOf(q) < 0) return false;
+      return true;
+    });
+  }
+  function printCards() {
+    var list = filteredCards().filter(function (c) { return !state.excluded.has(c.id); });
+    if (state.print.order === 'study') {
+      var pos = state.ix.so.pos, num = state.ix.cardNum, big = 1e9;
+      list = list.slice().sort(function (a, b) {
+        var pa = a.topicId != null && pos.has(a.topicId) ? pos.get(a.topicId) : big;
+        var pb = b.topicId != null && pos.has(b.topicId) ? pos.get(b.topicId) : big;
+        return pa - pb || num.get(a.id) - num.get(b.id);
+      });
+    }
+    return list;
+  }
+
+  function tileHtml(c) {
+    var n = state.ix.cardNum.get(c.id);
+    if (state.editing === c.id) {
+      var fields = c.type === 'cloze'
+        ? '<label for="ed-cloze">Cloze sentence (wrap each answer in {{ }})</label><textarea id="ed-cloze" data-f="cloze" rows="5">' + esc(c.cloze) + '</textarea>'
+        : '<label for="ed-front">Front</label><textarea id="ed-front" data-f="front" rows="3">' + esc(c.front) + '</textarea>' +
+          '<label for="ed-back">Back</label><textarea id="ed-back" data-f="back" rows="5">' + esc(c.back) + '</textarea>';
+      return '<article class="tile editing" data-id="' + esc(c.id) + '"><strong>Editing card #' + n + '</strong> <span class="badge">' + TYPE_LABEL[c.type] + '</span>' + fields +
+        '<p class="field-error" hidden></p><div class="btn-row"><button class="btn primary small" type="button" data-act="save">Save</button><button class="btn small" type="button" data-act="cancel">Cancel</button></div></article>';
+    }
+    var on = !state.excluded.has(c.id), fl = state.flipped.has(c.id);
+    var crumb = topicPath(c.topicId).join(' > ') || 'Unassigned';
+    var fh = faceHtml(c), lf = learnFirst(c);
+    return '<article class="tile' + (on ? '' : ' off') + (fl ? ' flipped' : '') + '" data-id="' + esc(c.id) + '">' +
+      '<div class="tile-top"><label class="sel"><input type="checkbox" data-act="sel"' + (on ? ' checked' : '') + '> Print</label>' +
+      '<span class="badge">' + TYPE_LABEL[c.type] + '</span><span class="diff" title="Difficulty ' + c.difficulty + ' of 3" aria-label="Difficulty ' + c.difficulty + ' of 3">' + diffDots(c.difficulty) + '</span>' +
+      '<span class="spacer"></span><button class="link-btn" type="button" data-act="edit">Edit</button></div>' +
+      '<div class="flip" data-act="flip" role="button" tabindex="0" aria-pressed="' + fl + '" aria-label="Card ' + n + '. Showing ' + (fl ? 'back' : 'front') + '. Press to flip.">' +
+      '<div class="flip-inner"><div class="face front"><div class="crumb">' + esc(crumb) + '</div><div class="ftext">' + fh.front + '</div></div>' +
+      '<div class="face back"><div class="ftext">' + fh.back + '</div>' + (lf ? '<div class="learn">Learn first: ' + esc(lf) + '</div>' : '') + '</div></div></div>' +
+      '<div class="tile-foot"><span>#' + n + ' &middot; ' + esc(c.id) + '</span><span class="side">' + (fl ? 'Back' : 'Front') + '</span></div></article>';
+  }
+
+  function renderCards() {
+    if (!state.deck) return;
+    var list = filteredCards();
+    $('#cardGrid').innerHTML = list.map(tileHtml).join('');
+    $('#noMatch').hidden = list.length > 0;
+    updateCount(list);
+  }
+  function updateCount(list) {
+    list = list || filteredCards();
+    var total = state.deck.cards.length;
+    var willPrint = list.filter(function (c) { return !state.excluded.has(c.id); }).length;
+    $('#cardCount').innerHTML = 'Showing <strong>' + list.length + '</strong> of ' + total + ' cards. <strong>' + willPrint + '</strong> will print (shown and ticked).' +
+      (state.excluded.size ? ' ' + state.excluded.size + ' unticked in total.' : '');
+  }
+
+  function flipTile(tile) {
+    var id = tile.dataset.id;
+    var fl = !state.flipped.has(id);
+    if (fl) state.flipped.add(id); else state.flipped.delete(id);
+    tile.classList.toggle('flipped', fl);
+    var f = $('.flip', tile);
+    f.setAttribute('aria-pressed', String(fl));
+    f.setAttribute('aria-label', f.getAttribute('aria-label').replace(/Showing (front|back)/, 'Showing ' + (fl ? 'back' : 'front')));
+    $('.side', tile).textContent = fl ? 'Back' : 'Front';
+  }
+
+  function onGridClick(e) {
+    var actEl = e.target.closest('[data-act]');
+    if (!actEl) return;
+    var tile = actEl.closest('.tile');
+    var id = tile && tile.dataset.id;
+    var card = id && state.deck.cards.find(function (c) { return c.id === id; });
+    if (!card) return;
+    var act = actEl.dataset.act;
+    if (act === 'flip') flipTile(tile);
+    else if (act === 'sel') {
+      if (actEl.checked) state.excluded.delete(id); else state.excluded.add(id);
+      tile.classList.toggle('off', !actEl.checked);
+      updateCount(); saveDeck(); state.printDirty = true;
+    } else if (act === 'edit') {
+      state.editing = id;
+      tile.outerHTML = tileHtml(card);
+      var ta = $('.tile.editing textarea');
+      if (ta) ta.focus();
+    } else if (act === 'cancel') {
+      state.editing = null;
+      tile.outerHTML = tileHtml(card);
+    } else if (act === 'save') {
+      var err = $('.field-error', tile);
+      if (card.type === 'cloze') {
+        var cz = $('[data-f="cloze"]', tile).value.trim();
+        if (!CLOZE_TEST.test(cz)) { err.textContent = 'Wrap at least one answer in {{ }}.'; err.hidden = false; return; }
+        card.cloze = cz; card.front = clozeBlank(cz); card.back = clozeAnswers(cz).join('; ');
+      } else {
+        var fr = $('[data-f="front"]', tile).value.trim(), bk = $('[data-f="back"]', tile).value.trim();
+        if (!fr || !bk) { err.textContent = 'Front and back both need some text.'; err.hidden = false; return; }
+        card.front = fr; card.back = bk;
+      }
+      state.editing = null; state.dirty = true; state.printDirty = true;
+      tile.outerHTML = tileHtml(card);
+      saveDeck();
+      toast('Card saved');
+    }
+  }
+
+  function exportJson() {
+    var d = state.deck;
+    var outObj = {
+      schemaVersion: 1, subject: d.subject, level: d.level, summary: d.summary,
+      topics: d.topics.map(function (t) { return { id: t.id, name: t.name, parentId: t.parentId, description: t.description, prerequisites: t.prerequisites.slice() }; }),
+      cards: d.cards.map(function (c) {
+        var o = { id: c.id, type: c.type, topicId: c.topicId, front: c.front, back: c.back };
+        if (c.type === 'cloze') o.cloze = c.cloze;
+        o.difficulty = c.difficulty; o.prerequisites = c.prerequisites.slice();
+        return o;
+      }),
+      sources: d.sources.map(function (s) { return { title: s.title, url: s.url }; })
+    };
+    var blob = new Blob([JSON.stringify(outObj, null, 2)], { type: 'application/json' });
+    var a = document.createElement('a');
+    var slug = d.subject.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'deck';
+    a.href = URL.createObjectURL(blob);
+    a.download = slug + '-flashcards.json';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+    state.dirty = false; saveDeck();
+    toast('Deck exported');
+  }
+
+  /* ================= Study order tab ================= */
+  function renderOrder() {
+    var ix = state.ix, so = ix.so;
+    var cyc = so.cycles.length ? '<div class="msg warn"><h3>Prerequisite ' + (so.cycles.length === 1 ? 'loop' : 'loops') + ' found</h3><p>Some topics depend on each other in a circle, so there is no strict order for them. They are placed in outline order and marked below. Study them together.</p><ul>' +
+      so.cycles.map(function (c) { return '<li>' + esc(c.map(topicName).join(' > ') + ' > ' + topicName(c[0])) + '</li>'; }).join('') + '</ul></div>' : '';
+    $('#cycleNote').innerHTML = cyc;
+    if (!so.order.length) {
+      $('#orderList').innerHTML = '<li class="hint">This deck has no topics, so there is no study order.</li>';
+    } else {
+      $('#orderList').innerHTML = so.order.map(function (id, i) {
+        var t = ix.tById.get(id);
+        var path = topicPath(id).slice(0, -1).join(' > ');
+        var pre = t.prerequisites.map(topicName);
+        var leads = so.out.get(id).slice().sort(function (a, b) { return so.pos.get(a) - so.pos.get(b); }).map(topicName);
+        var n = ix.direct.get(id) || 0;
+        return '<li class="order-item' + (so.inCycle.has(id) ? ' cycle' : '') + '"><div class="oi-num">' + (i + 1) + '</div><div class="oi-body">' +
+          (path ? '<div class="oi-path">' + esc(path) + ' &gt;</div>' : '') +
+          '<div class="oi-name">' + esc(t.name) + (so.inCycle.has(id) ? ' <span class="badge">In a loop</span>' : '') + '</div>' +
+          (t.description ? '<div class="oi-desc">' + esc(t.description) + '</div>' : '') +
+          '<div class="oi-rel"><b>Learn first:</b> ' + (pre.length ? esc(pre.join(', ')) : '<span class="hint">nothing, a good place to start</span>') + '</div>' +
+          '<div class="oi-rel"><b>Leads to:</b> ' + (leads.length ? esc(leads.join(', ')) : '<span class="hint">no later topics</span>') + '</div>' +
+          '</div><div class="oi-count">' + plural(n, 'card') + '</div></li>';
+      }).join('');
+    }
+    var un = ix.direct.get('') || 0;
+    $('#unassignedNote').textContent = un ? plural(un, 'card is', 'cards are') + ' not linked to a topic.' : '';
+  }
+
+  /* ================= Printing ================= */
+  var SHEET_W = 190, SHEET_H = 276, INSET = 5;
+  var MIN_PT = 8;
+
+  function fitText(box, maxPt, minPt) {
+    var inner = box.firstElementChild;
+    function fits() { return inner.offsetHeight <= box.clientHeight + 0.5 && inner.scrollWidth <= inner.clientWidth + 0.5; }
+    var hi = Math.round(maxPt * 2), lo = Math.round(minPt * 2);
+    box.style.fontSize = (hi / 2) + 'pt';
+    if (fits()) return true;
+    var best = lo;
+    while (lo <= hi) {
+      var mid = (lo + hi) >> 1;
+      box.style.fontSize = (mid / 2) + 'pt';
+      if (fits()) { best = mid; lo = mid + 1; } else hi = mid - 1;
+    }
+    box.style.fontSize = (best / 2) + 'pt';
+    return fits();
+  }
+
+  function linesSvg(colXs, rowYs, foldXs) {
+    var W = SHEET_W, H = SHEET_H, I = INSET, s = [];
+    s.push('<svg class="lines" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + 'mm" height="' + H + 'mm" aria-hidden="true">');
+    colXs.forEach(function (x) {
+      s.push('<line class="cut" x1="' + x + '" y1="' + I + '" x2="' + x + '" y2="' + (H - I) + '"/>');
+      s.push('<line class="crop" x1="' + x + '" y1="0.3" x2="' + x + '" y2="' + (I - 0.8) + '"/>');
+      s.push('<line class="crop" x1="' + x + '" y1="' + (H - I + 0.8) + '" x2="' + x + '" y2="' + (H - 0.3) + '"/>');
+    });
+    rowYs.forEach(function (y) {
+      s.push('<line class="cut" x1="' + I + '" y1="' + y + '" x2="' + (W - I) + '" y2="' + y + '"/>');
+      s.push('<line class="crop" x1="0.3" y1="' + y + '" x2="' + (I - 0.8) + '" y2="' + y + '"/>');
+      s.push('<line class="crop" x1="' + (W - I + 0.8) + '" y1="' + y + '" x2="' + (W - 0.3) + '" y2="' + y + '"/>');
+    });
+    foldXs.forEach(function (x) {
+      s.push('<line class="fold" x1="' + x + '" y1="' + I + '" x2="' + x + '" y2="' + (H - I) + '"/>');
+      s.push('<text class="fold-label" x="' + x + '" y="' + (I - 1.3) + '">fold</text>');
+    });
+    s.push('</svg>');
+    return s.join('');
+  }
+
+  function pcardHtml(card, side, x, y, w, h, maxPt) {
+    var n = state.ix.cardNum.get(card.id), fh = faceHtml(card);
+    var style = 'left:' + x.toFixed(3) + 'mm;top:' + y.toFixed(3) + 'mm;width:' + w.toFixed(3) + 'mm;height:' + h.toFixed(3) + 'mm';
+    var foot = '<div class="pc-foot"><span>#' + n + ' &middot; ' + esc(state.deck.subject) + '</span><span>' + (side === 'front' ? TYPE_LABEL[card.type] : 'Back') + '</span></div>';
+    if (side === 'front') {
+      var crumb = topicPath(card.topicId).join(' > ');
+      return '<div class="pcard front" data-num="' + n + '" data-side="front" style="' + style + '">' +
+        (crumb ? '<div class="pc-crumb">' + esc(crumb) + '</div>' : '') +
+        '<div class="pc-fit" data-max="' + maxPt.front + '"><div class="pc-text">' + fh.front + '</div></div>' + foot + '</div>';
+    }
+    var lf = learnFirst(card);
+    return '<div class="pcard back" data-num="' + n + '" data-side="back" style="' + style + '">' +
+      '<div class="pc-fit" data-max="' + maxPt.back + '"><div class="pc-text">' + fh.back + '</div></div>' +
+      (lf ? '<div class="pc-learn">Learn first: ' + esc(lf) + '</div>' : '') + foot + '</div>';
+  }
+
+  function range(n, f) { var a = []; for (var i = 0; i <= n; i++) a.push(+(f(i)).toFixed(3)); return a; }
+
+  function printGeometry() {
+    var p = state.print, big = p.layout !== '3x3';
+    var gw = SHEET_W - 2 * INSET, gh = SHEET_H - 2 * INSET;
+    if (p.mode === 'duplex') {
+      var cols = big ? 2 : 3, rows = big ? 4 : 3;
+      return { cols: cols, rows: rows, per: cols * rows, w: gw / cols, h: gh / rows, pairCols: 0 };
+    }
+    var pairCols = big ? 1 : 2, frows = big ? 4 : 3;
+    return { cols: pairCols * 2, rows: frows, per: pairCols * frows, w: gw / (pairCols * 2), h: gh / frows, pairCols: pairCols };
+  }
+
+  function buildPrint() {
+    var root = $('#print-root');
+    if (!state.deck) { root.innerHTML = ''; return; }
+    var cards = printCards(), g = printGeometry(), p = state.print;
+    var I = INSET, html = [];
+    var maxPt = g.w < 50 ? { front: 13, back: 11 } : { front: 16, back: 13 };
+    var pageNo = 0, totalPages;
+    if (!cards.length) {
+      root.innerHTML = '<div class="page-frame"><div class="sheet"><p class="print-empty">No cards to print. Tick some cards or clear the filters on the Cards tab.</p></div></div>';
+      updatePrintInfo(0, 0, []);
+      state.printDirty = false;
+      return;
+    }
+    var chunks = [];
+    for (var i = 0; i < cards.length; i += g.per) chunks.push(cards.slice(i, i + g.per));
+    totalPages = p.mode === 'duplex' ? chunks.length * 2 : chunks.length;
+
+    if (p.mode === 'duplex') {
+      var cutX = range(g.cols, function (k) { return I + k * g.w; });
+      var cutY = range(g.rows, function (k) { return I + k * g.h; });
+      var svg = linesSvg(cutX, cutY, []);
+      chunks.forEach(function (chunk, ci) {
+        var fronts = [], backs = [];
+        chunk.forEach(function (c, k) {
+          var r = Math.floor(k / g.cols), col = k % g.cols;
+          var mirrored = g.cols - 1 - col;
+          fronts.push(pcardHtml(c, 'front', I + col * g.w, I + r * g.h, g.w, g.h, maxPt));
+          backs.push(pcardHtml(c, 'back', I + mirrored * g.w, I + r * g.h, g.w, g.h, maxPt));
+        });
+        pageNo++;
+        html.push('<div class="page-frame" data-page="' + pageNo + '" data-kind="front"><div class="page-label"><span>Page ' + pageNo + ' of ' + totalPages + ': fronts (sheet ' + (ci + 1) + ')</span><span>A4</span></div><div class="sheet">' + svg + fronts.join('') + '</div></div>');
+        pageNo++;
+        html.push('<div class="page-frame" data-page="' + pageNo + '" data-kind="back"><div class="page-label"><span>Page ' + pageNo + ' of ' + totalPages + ': backs, mirrored for long edge flip</span><span>A4</span></div><div class="sheet">' + svg + backs.join('') + '</div></div>');
+      });
+    } else {
+      var pw = g.w * 2;
+      var cutXf = range(g.pairCols, function (k) { return I + k * pw; });
+      var cutYf = range(g.rows, function (k) { return I + k * g.h; });
+      var folds = [];
+      for (var pc = 0; pc < g.pairCols; pc++) folds.push(+(I + pc * pw + g.w).toFixed(3));
+      var svgf = linesSvg(cutXf, cutYf, folds);
+      chunks.forEach(function (chunk) {
+        var faces = [];
+        chunk.forEach(function (c, k) {
+          var r = Math.floor(k / g.pairCols), pcol = k % g.pairCols;
+          var x0 = I + pcol * pw, y0 = I + r * g.h;
+          faces.push(pcardHtml(c, 'front', x0, y0, g.w, g.h, maxPt));
+          faces.push(pcardHtml(c, 'back', x0 + g.w, y0, g.w, g.h, maxPt));
+        });
+        pageNo++;
+        html.push('<div class="page-frame" data-page="' + pageNo + '" data-kind="fold"><div class="page-label"><span>Page ' + pageNo + ' of ' + totalPages + ': cut on dashed lines, fold on dotted lines</span><span>A4</span></div><div class="sheet">' + svgf + faces.join('') + '</div></div>');
+      });
+    }
+    root.innerHTML = html.join('');
+
+    var over = new Set();
+    $$('.pc-fit', root).forEach(function (box) {
+      if (!fitText(box, +box.dataset.max, MIN_PT)) {
+        var pcard = box.parentNode;
+        pcard.classList.add('overflow');
+        over.add(+pcard.dataset.num);
+      }
+    });
+    state.printDirty = false;
+    updatePrintInfo(cards.length, totalPages, Array.from(over).sort(function (a, b) { return a - b; }));
+  }
+
+  function updatePrintInfo(n, pages, over) {
+    var p = state.print, g = printGeometry();
+    $('#printInstr').innerHTML = p.mode === 'duplex'
+      ? '<strong>Duplex settings:</strong> print double-sided, flip on long edge, A4 paper, scale 100% (actual size, not "fit to page"), headers and footers off. Fronts print on odd pages and backs on even pages.'
+      : '<strong>Fold settings:</strong> print single-sided on A4 at 100% scale (actual size), headers and footers off. Cut on the dashed lines, fold each card on the dotted line with the print facing out, then glue or tape if you like.';
+    $('#layoutDesc24').textContent = p.mode === 'duplex' ? '8 cards per page, about A7 size.' : '4 folded cards per page, about A7 size.';
+    $('#layoutDesc33').textContent = p.mode === 'duplex' ? '9 smaller cards per page.' : '6 narrow folded cards per page.';
+    if (!n) { $('#printSummary').textContent = 'No cards to print.'; $('#printWarn').innerHTML = ''; return; }
+    var sheets = p.mode === 'duplex' ? pages / 2 : pages;
+    $('#printSummary').innerHTML = '<strong>' + plural(n, 'card') + '</strong> on ' + plural(pages, 'page') +
+      (p.mode === 'duplex' ? ' (' + plural(sheets, 'sheet') + ' of paper, printed both sides)' : '') +
+      '. Card size ' + (p.mode === 'duplex' ? g.w.toFixed(0) + ' x ' + g.h.toFixed(0) + ' mm' : g.w.toFixed(0) + ' x ' + g.h.toFixed(0) + ' mm when folded') + '.' +
+      (n < state.deck.cards.length ? ' <span class="hint">Filters and unticked cards on the Cards tab are left out.</span>' : '');
+    $('#printWarn').innerHTML = over.length ? '<div class="msg warn"><h3>Some text is still too long</h3><p>' + plural(over.length, 'card') + ' could not fit at the smallest readable size (' + MIN_PT + 'pt): #' + over.join(', #') + '. Shorten them with Edit on the Cards tab, or choose 2 x 4.</p></div>' : '';
+  }
+
+  function ensurePrint() { if (state.printDirty) buildPrint(); }
+
+  function buildStudySheet() {
+    var root = $('#study-print');
+    if (!state.deck) { root.innerHTML = ''; return; }
+    var ix = state.ix, so = ix.so, d = state.deck;
+    var rows = so.order.map(function (id, i) {
+      var t = ix.tById.get(id), path = topicPath(id).slice(0, -1).join(' > ');
+      return '<tr><td class="n">' + (i + 1) + '</td><td>' + (path ? '<span class="path">' + esc(path) + '</span>' : '') + '<strong>' + esc(t.name) + '</strong>' +
+        (so.inCycle.has(id) ? ' <span class="loop">(loop)</span>' : '') + '</td><td class="c">' + (ix.direct.get(id) || 0) + '</td><td>' +
+        esc(t.prerequisites.map(topicName).join(', ')) + '</td><td class="d"><span class="box-tick"></span></td></tr>';
+    }).join('');
+    var un = ix.direct.get('') || 0;
+    if (un) rows += '<tr><td class="n"></td><td><em>Unassigned</em></td><td class="c">' + un + '</td><td></td><td class="d"><span class="box-tick"></span></td></tr>';
+    root.innerHTML = '<div class="page-frame"><div class="sheet study-sheet"><div class="study-fit">' +
+      '<h1>Study order</h1><p class="sub"><strong>' + esc(d.subject) + '</strong>' + (d.level ? ' &middot; ' + esc(d.level) : '') + ' &middot; ' + plural(d.cards.length, 'card') + ' &middot; ' + plural(d.topics.length, 'topic') + '</p>' +
+      (so.order.length ? '<table><thead><tr><th>#</th><th>Topic</th><th style="text-align:right">Cards</th><th>Learn first</th><th>Done</th></tr></thead><tbody>' + rows + '</tbody></table>' : '<p>This deck has no topics.</p>') +
+      (so.cycles.length ? '<p class="foot">Topics marked (loop) depend on each other in a circle. Study them together.</p>' : '') +
+      '<p class="foot">Work down the list. Each topic comes after the topics it depends on.</p></div></div></div>';
+    var sheet = $('.study-sheet', root), fit = $('.study-fit', root);
+    var lo = 10, hi = 22, best = 10; // half points: 5pt to 11pt
+    function ok() { return fit.offsetHeight <= sheet.clientHeight; }
+    fit.style.fontSize = (hi / 2) + 'pt';
+    if (!ok()) {
+      while (lo <= hi) { var mid = (lo + hi) >> 1; fit.style.fontSize = (mid / 2) + 'pt'; if (ok()) { best = mid; lo = mid + 1; } else hi = mid - 1; }
+      fit.style.fontSize = (best / 2) + 'pt';
+    }
+  }
+
+  function printStudy() {
+    if (!state.deck) return;
+    buildStudySheet();
+    document.body.classList.add('print-study');
+    window.print();
+    setTimeout(function () { document.body.classList.remove('print-study'); }, 500);
+  }
+
+  /* ================= Tabs, theme, restore ================= */
+  function showTab(name) {
+    state.tab = name;
+    $$('.steps [role="tab"]').forEach(function (b) {
+      var on = b.dataset.tab === name;
+      b.setAttribute('aria-selected', String(on));
+      b.tabIndex = on ? 0 : -1;
+    });
+    $$('main > section').forEach(function (s) { s.hidden = s.id !== 'tab-' + name; });
+    document.body.className = document.body.className.replace(/\btab-\S+/g, '').trim() + ' tab-' + name;
+    if (name === 'print') ensurePrint();
+    store.set('ftm:tab', name);
+    window.scrollTo(0, 0);
+  }
+
+  var THEMES = ['auto', 'light', 'dark'];
+  function applyTheme(t) {
+    if (t === 'auto') document.documentElement.removeAttribute('data-theme');
+    else document.documentElement.setAttribute('data-theme', t);
+    $('#themeBtn').textContent = 'Theme: ' + t.charAt(0).toUpperCase() + t.slice(1);
+  }
+
+  function loadSample() {
+    var txt = $('#sample-data').textContent.trim();
+    $('#jsonIn').value = txt;
+    showTab('import');
+    runImport(txt, { sample: true });
+  }
+
+  function readFile(file) {
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function () {
+      $('#jsonIn').value = String(reader.result || '');
+      runImport($('#jsonIn').value);
+    };
+    reader.onerror = function () { toast('Could not read that file'); };
+    reader.readAsText(file);
+  }
+
+  function init() {
+    // Theme
+    var theme = store.get('ftm:theme', 'auto');
+    if (THEMES.indexOf(theme) < 0) theme = 'auto';
+    applyTheme(theme);
+    $('#themeBtn').addEventListener('click', function () {
+      theme = THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length];
+      applyTheme(theme); store.set('ftm:theme', theme);
+    });
+
+    // Prompt form
+    var form = store.get('ftm:form', null);
+    if (form && typeof form === 'object') {
+      if (typeof form.subject === 'string') $('#fSubject').value = form.subject;
+      if (LEVELS[form.level]) $('#fLevel').value = form.level;
+      if (form.count != null) $('#fCount').value = form.count;
+      if (Array.isArray(form.types)) $$('input[name="ctype"]').forEach(function (i) { i.checked = form.types.indexOf(i.value) >= 0; });
+      if (typeof form.exam === 'string') $('#fExam').value = form.exam;
+      if (typeof form.notes === 'string') $('#fNotes').value = form.notes;
+    }
+    $('#promptForm').addEventListener('input', updatePrompt);
+    $('#promptForm').addEventListener('change', updatePrompt);
+    $('#promptForm').addEventListener('submit', function (e) { e.preventDefault(); });
+    $('#fCount').addEventListener('blur', function () { $('#fCount').value = readForm().count; updatePrompt(); });
+    updatePrompt();
+    $('#copyBtn').addEventListener('click', function () {
+      var f = readForm();
+      if (!f.subject) { $('#subjectErr').hidden = false; $('#fSubject').focus(); return; }
+      if (!f.types.length) { $('#typeErr').hidden = false; return; }
+      var txt = buildPrompt(f);
+      copyText(txt).then(function () {
+        $('#copyBtn').textContent = 'Copied';
+        toast('Prompt copied. Paste it into your LLM.');
+        setTimeout(function () { $('#copyBtn').textContent = 'Copy prompt'; }, 1800);
+      }, function () {
+        var ta = $('#promptOut'); ta.focus(); ta.select();
+        toast('Press Ctrl+C (or Cmd+C) to copy the selected prompt');
+      });
+    });
+
+    // Tabs
+    $$('.steps [role="tab"]').forEach(function (b) {
+      b.addEventListener('click', function () { showTab(b.dataset.tab); });
+      b.addEventListener('keydown', function (e) {
+        var tabs = $$('.steps [role="tab"]'), i = tabs.indexOf(b);
+        if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+          var nxt = tabs[(i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length];
+          nxt.focus(); showTab(nxt.dataset.tab); e.preventDefault();
+        }
+      });
+    });
+    document.addEventListener('click', function (e) {
+      var g = e.target.closest('[data-goto]');
+      if (g) { e.preventDefault(); showTab(g.dataset.goto); return; }
+      if (e.target.closest('[data-sample]')) { loadSample(); return; }
+      if (e.target.closest('[data-print-study]')) { printStudy(); return; }
+      if (e.target.closest('#exportBtn')) exportJson();
+    });
+
+    // Import
+    $('#importBtn').addEventListener('click', function () { runImport($('#jsonIn').value); });
+    $('#uploadBtn').addEventListener('click', function () { $('#fileIn').click(); });
+    $('#fileIn').addEventListener('change', function (e) { readFile(e.target.files[0]); e.target.value = ''; });
+    $('#clearInBtn').addEventListener('click', function () { $('#jsonIn').value = ''; $('#importResult').innerHTML = ''; $('#jsonIn').focus(); });
+    var ta = $('#jsonIn');
+    ta.addEventListener('dragover', function (e) { e.preventDefault(); ta.classList.add('drag'); });
+    ta.addEventListener('dragleave', function () { ta.classList.remove('drag'); });
+    ta.addEventListener('drop', function (e) {
+      ta.classList.remove('drag');
+      if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) { e.preventDefault(); readFile(e.dataTransfer.files[0]); }
+    });
+
+    // Cards
+    var grid = $('#cardGrid');
+    grid.addEventListener('click', function (e) {
+      if (e.target.closest('textarea')) return;
+      onGridClick(e);
+    });
+    grid.addEventListener('keydown', function (e) {
+      var f = e.target.closest('.flip');
+      if (f && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); flipTile(f.closest('.tile')); }
+    });
+    function onFilter() {
+      state.filters = { topic: $('#filTopic').value, type: $('#filType').value, diff: $('#filDiff').value, q: $('#filText').value };
+      state.editing = null; state.printDirty = true;
+      renderCards();
+    }
+    ['#filTopic', '#filType', '#filDiff'].forEach(function (s) { $(s).addEventListener('change', onFilter); });
+    $('#filText').addEventListener('input', onFilter);
+    $('#resetFilters').addEventListener('click', function () {
+      state.filters = { topic: '', type: '', diff: '', q: '' };
+      renderFilters(); state.printDirty = true; renderCards();
+    });
+    $('#selShown').addEventListener('click', function () {
+      filteredCards().forEach(function (c) { state.excluded.delete(c.id); });
+      state.printDirty = true; saveDeck(); renderCards();
+    });
+    $('#unselShown').addEventListener('click', function () {
+      filteredCards().forEach(function (c) { state.excluded.add(c.id); });
+      state.printDirty = true; saveDeck(); renderCards();
+    });
+    $('#flipShown').addEventListener('click', function () {
+      var list = filteredCards();
+      var anyFront = list.some(function (c) { return !state.flipped.has(c.id); });
+      list.forEach(function (c) { if (anyFront) state.flipped.add(c.id); else state.flipped.delete(c.id); });
+      renderCards();
+    });
+
+    // Print options
+    var pr = store.get('ftm:print', null);
+    if (pr && typeof pr === 'object') {
+      if (pr.mode === 'duplex' || pr.mode === 'fold') state.print.mode = pr.mode;
+      if (pr.layout === '2x4' || pr.layout === '3x3') state.print.layout = pr.layout;
+      if (pr.order === 'deck' || pr.order === 'study') state.print.order = pr.order;
+    }
+    [['pmode', 'mode'], ['playout', 'layout'], ['porder', 'order']].forEach(function (pair) {
+      $$('input[name="' + pair[0] + '"]').forEach(function (r) {
+        r.checked = r.value === state.print[pair[1]];
+        r.addEventListener('change', function () {
+          if (!r.checked) return;
+          state.print[pair[1]] = r.value;
+          store.set('ftm:print', state.print);
+          buildPrint();
+        });
+      });
+    });
+    $('#printBtn').addEventListener('click', function () {
+      document.body.classList.remove('print-study');
+      ensurePrint();
+      window.print();
+    });
+    window.addEventListener('beforeprint', function () {
+      if (document.body.classList.contains('print-study')) buildStudySheet();
+      else ensurePrint();
+    });
+    window.addEventListener('afterprint', function () { document.body.classList.remove('print-study'); });
+
+    // Restore saved deck
+    var saved = store.get('ftm:deck', null);
+    if (saved && saved.deck && Array.isArray(saved.deck.cards) && saved.deck.cards.length) {
+      try {
+        var v = validateDeck(saved.deck, {});
+        if (!v.fatal) {
+          var ids = new Set(v.deck.cards.map(function (c) { return c.id; }));
+          setDeck(v.deck, { restored: true, dirty: !!saved.dirty, excluded: (saved.excluded || []).filter(function (id) { return ids.has(id); }) });
+          $('#savedNote').innerHTML = '<div class="msg info"><h3>Restored your last deck</h3><p>"' + esc(v.deck.subject) + '" (' + plural(v.deck.cards.length, 'card') + ') was saved in this browser. Importing new JSON replaces it.</p></div>';
+        }
+      } catch (e) { store.del('ftm:deck'); }
+    }
+    var lastTab = store.get('ftm:tab', 'prompt');
+    if (['prompt', 'import', 'cards', 'order', 'print'].indexOf(lastTab) < 0) lastTab = 'prompt';
+    showTab(lastTab);
+  }
+
+  // Exposed for testing in the browser console.
+  window.FTM = { parseInput: parseInput, validateDeck: validateDeck, buildPrompt: buildPrompt, computeStudyOrder: computeStudyOrder, state: state, buildPrint: buildPrint };
+
+  init();
+})();
+</script>
+</body>
+</html>
