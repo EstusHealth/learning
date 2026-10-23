@@ -1,1 +1,21 @@
 Study help
+
+Flashcard Template Maker (index.html)
+-------------------------------------
+A single file web app. Open index.html in any modern browser. It works offline,
+with no build step, no backend and no external libraries.
+
+1. Build prompt: enter a subject, level, card count, card types and optional
+   exam or notes, then copy the research prompt.
+2. Paste the prompt into any LLM (Claude, ChatGPT, Gemini). It returns JSON
+   (schema version 1, included in the prompt).
+3. Import: paste or upload the JSON. Code fences and stray text are removed,
+   the deck is validated, and problems are listed in plain language.
+4. Cards: preview, flip, filter, untick, edit inline and export JSON.
+5. Study order: topics sorted by prerequisites, with loops flagged, plus a
+   printable one page study order sheet.
+6. Print: A4 with cut lines and crop marks, 2 x 4 or 3 x 3 per page.
+   Double-sided mode mirrors the back pages for duplex printing (flip on
+   long edge). Single-sided fold mode prints front and back side by side.
+
+The last deck is kept in the browser's local storage.
