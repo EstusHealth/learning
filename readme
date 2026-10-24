@@ -17,5 +17,18 @@ with no build step, no backend and no external libraries.
 6. Print: A4 with cut lines and crop marks, 2 x 4 or 3 x 3 per page.
    Double-sided mode mirrors the back pages for duplex printing (flip on
    long edge). Single-sided fold mode prints front and back side by side.
+7. Play: test yourself on screen with the loaded deck. Choose a topic,
+   difficulty and length, then pick a challenge:
+   - Quiz: multiple choice, up to four options per card.
+   - Beat the clock: multiple choice against a 60, 90 or 120 second timer.
+     Each wrong answer costs 5 seconds.
+   - Sudden death: get through every chosen card on 3 lives.
+   - Match up: pair cards with their answers, 5 to a board, with a speed bonus.
+   - Type it: type the missing words of cloze cards, the term for a
+     definition, or a short answer. Small typos are forgiven, and an
+     "I was right" button overrides a strict mark.
+   Answers in a row build a streak multiplier (x2, then x3). Results list the
+   cards you missed, with a button to practise just those. Best scores are
+   kept per deck and challenge.
 
-The last deck is kept in the browser's local storage.
+The last deck, settings and best scores are kept in the browser's local storage.

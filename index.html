@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="description" content="Build a research prompt for any LLM, import the JSON it returns, and print flashcards on A4 with cut lines.">
+<meta name="description" content="Build a research prompt for any LLM, import the JSON it returns, print flashcards on A4 with cut lines, or play them as on screen challenge games.">
 <title>Flashcard Template Maker</title>
 <style>
 /* ---------- Theme tokens ---------- */
@@ -283,6 +283,61 @@ details ul { margin: 8px 0 0; padding-left: 20px; font-size: .92rem; }
 }
 .preview-title { margin: 8px 0 4px; }
 
+/* ---------- Play ---------- */
+.mode-grid { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
+.mode-card:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+.check .best { color: var(--accent); font-weight: 700; margin-top: 4px; }
+.check .best:empty { display: none; }
+.game { max-width: 780px; margin-left: auto; margin-right: auto; }
+.hud { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; font-size: .92rem; color: var(--muted); }
+.hud b { color: var(--text); font-variant-numeric: tabular-nums; }
+.hud .spacer { flex: 1; }
+.hud-mode { font-weight: 700; color: var(--accent); }
+.game .chip { text-transform: none; }
+.lives { color: var(--danger); letter-spacing: 2px; font-size: 1.05rem; }
+.g-bar { height: 6px; background: var(--surface-2); border-radius: 999px; margin: 10px 0 18px; overflow: hidden; }
+.g-bar span { display: block; height: 100%; background: var(--accent); transition: width .2s linear; }
+.g-crumb { font-size: .8rem; color: var(--muted); }
+.g-prompt { font-size: 1.25rem; font-weight: 600; line-height: 1.4; margin: 6px 0 14px; overflow-wrap: anywhere; }
+.g-prompt:focus { outline: none; }
+.g-ask { color: var(--muted); font-size: .92rem; margin: 0 0 10px; }
+@media (hover: none) { .g-keys { display: none; } }
+.g-blank {
+  display: inline-block; min-width: 2.6em; border-bottom: 2px solid var(--accent); color: var(--accent);
+  text-align: center; font-size: .8em; line-height: 1.2;
+}
+.g-opts { display: grid; gap: 10px; }
+.g-opt, .m-tile { width: 100%; text-align: left; justify-content: flex-start; align-items: flex-start; font-weight: 500; line-height: 1.4; }
+.g-opt { padding: 12px 14px; }
+.g-opt .k {
+  flex: none; display: inline-grid; place-items: center; width: 1.7em; height: 1.7em; border-radius: 6px;
+  background: var(--surface-2); font-weight: 700; font-size: .85em; margin-right: 4px;
+}
+.g-opt .t { min-width: 0; overflow-wrap: anywhere; }
+.g-opt:disabled, .m-tile:disabled { cursor: default; opacity: .6; }
+.g-opt.right, .g-opt.wrong { opacity: 1; }
+.g-opt.right, .m-tile.done, .g-in.right { border-color: var(--ok); background: var(--ok-soft); }
+.g-opt.wrong, .m-tile.wrong, .g-in.wrong { border-color: var(--danger); background: var(--danger-soft); }
+.g-feedback { margin: 16px 0 0; }
+.g-feedback p { margin: 0; }
+.match-grid { display: grid; gap: 10px; grid-template-columns: 1fr 1fr; }
+.match-col { display: grid; gap: 10px; align-content: start; min-width: 0; }
+.m-tile { font-size: .9rem; min-height: 64px; overflow-wrap: anywhere; }
+.m-tile.sel { border-color: var(--accent); background: var(--accent-soft); box-shadow: inset 0 0 0 2px var(--accent); }
+.m-tile.wrong { animation: g-shake .3s; }
+@keyframes g-shake { 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
+@media (prefers-reduced-motion: reduce) { .m-tile.wrong { animation: none; } .g-bar span { transition: none; } }
+.g-results:focus { outline: none; }
+.big-score { font-size: 2.6rem; font-weight: 800; color: var(--accent); line-height: 1.1; font-variant-numeric: tabular-nums; }
+.stat-grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); margin: 16px 0; }
+.stat { background: var(--surface-2); border-radius: 10px; padding: 10px 12px; }
+.stat .v { font-size: 1.3rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.stat .l { font-size: .8rem; color: var(--muted); }
+.g-missed { padding-left: 22px; margin: 6px 0 0; }
+.g-missed li { margin: 0 0 10px; }
+.g-missed .mq { font-weight: 600; }
+.g-missed .ma { color: var(--muted); font-size: .93rem; }
+
 /* ---------- Toast ---------- */
 #toast {
   position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%) translateY(20px); opacity: 0;
@@ -391,7 +446,7 @@ body.tab-print.has-deck #print-root {
       <span class="logo" aria-hidden="true"></span>
       <div>
         <h1>Flashcard Template Maker</h1>
-        <p class="tag">Research prompt in, printable A4 flashcards out.</p>
+        <p class="tag">Research prompt in, printable A4 flashcards and on screen games out.</p>
       </div>
     </div>
     <button id="themeBtn" class="btn ghost small" type="button" aria-label="Change colour theme">Theme: Auto</button>
@@ -402,6 +457,7 @@ body.tab-print.has-deck #print-root {
     <button role="tab" type="button" data-tab="cards" id="tabbtn-cards" aria-controls="tab-cards"><span class="num">3</span>Cards</button>
     <button role="tab" type="button" data-tab="order" id="tabbtn-order" aria-controls="tab-order"><span class="num">4</span>Study order</button>
     <button role="tab" type="button" data-tab="print" id="tabbtn-print" aria-controls="tab-print"><span class="num">5</span>Print</button>
+    <button role="tab" type="button" data-tab="play" id="tabbtn-play" aria-controls="tab-play"><span class="num">6</span>Play</button>
   </nav>
 </header>
 
@@ -414,7 +470,7 @@ body.tab-print.has-deck #print-root {
       <ol class="how-steps">
         <li><span class="n">1</span><div><strong>Describe your subject</strong><p>Fill in the form below and copy the research prompt it builds for you.</p></div></li>
         <li><span class="n">2</span><div><strong>Ask any LLM</strong><p>Paste the prompt into Claude, ChatGPT, Gemini or similar. A model with web search or a deep research mode gives the best results.</p></div></li>
-        <li><span class="n">3</span><div><strong>Import and print</strong><p>Paste or upload the JSON reply here. Preview, edit and filter the cards, then print them on A4 with cut lines.</p></div></li>
+        <li><span class="n">3</span><div><strong>Import, print or play</strong><p>Paste or upload the JSON reply here. Preview, edit and filter the cards, then print them on A4 with cut lines or test yourself with on screen challenges.</p></div></li>
       </ol>
     </div>
 
@@ -595,6 +651,40 @@ body.tab-print.has-deck #print-root {
       </div>
       <h3 class="preview-title" style="margin-top:22px">Preview</h3>
       <p class="hint" style="margin-top:0">This is exactly what prints. Red outlines (screen only) mark cards whose text is still too long at the smallest size.</p>
+    </div>
+  </section>
+
+  <!-- ===== 6. Play ===== -->
+  <section id="tab-play" role="tabpanel" aria-labelledby="tabbtn-play" hidden>
+    <div class="box empty-state no-deck-only">
+      <h2>No deck loaded yet</h2>
+      <p>Import a deck to play it as an on screen game.</p>
+      <div class="btn-row" style="justify-content:center">
+        <button class="btn primary" type="button" data-goto="import">Go to Import</button>
+        <button class="btn" type="button" data-sample>Try sample</button>
+      </div>
+    </div>
+    <div class="has-deck-only">
+      <div class="box" id="playSetup">
+        <h2>Play a challenge</h2>
+        <p class="hint" style="margin-top:0">Test yourself on screen with this deck. Pick a challenge, choose the cards, then start. Best scores are kept in this browser.</p>
+        <fieldset>
+          <legend>Challenge</legend>
+          <div class="mode-grid" id="modeGrid"></div>
+        </fieldset>
+        <div class="filters" style="margin-top:14px">
+          <div><label for="playTopic">Topic</label><select id="playTopic"></select></div>
+          <div><label for="playDiff">Difficulty</label><select id="playDiff">
+            <option value="">All levels</option><option value="1">1 (core)</option><option value="2">2 (applied)</option><option value="3">3 (advanced)</option>
+          </select></div>
+          <div id="playLenWrap"><label for="playLen" id="playLenLbl">Cards per game</label><select id="playLen"></select></div>
+        </div>
+        <label class="check" style="margin-top:14px"><input type="checkbox" id="playTicked"><span><strong>Ticked cards only</strong><span>Leave out cards you unticked on the Cards tab.</span></span></label>
+        <p class="count-line" id="playPool"></p>
+        <p class="field-error" id="playProblem" hidden></p>
+        <div class="btn-row"><button id="playStart" class="btn primary" type="button">Start</button></div>
+      </div>
+      <div id="playStage" hidden></div>
     </div>
   </section>
 </main>
@@ -1285,6 +1375,7 @@ body.tab-print.has-deck #print-root {
     dirty: false,
     filters: { topic: '', type: '', diff: '', q: '' },
     print: { mode: 'duplex', layout: '2x4', order: 'deck' },
+    play: { mode: 'quiz', topic: '', diff: '', ticked: true, length: '10', time: '60' },
     printDirty: true,
     pending: null,
     tab: 'prompt'
@@ -1365,6 +1456,8 @@ body.tab-print.has-deck #print-root {
     renderOrder();
     state.printDirty = true;
     if (state.tab === 'print') buildPrint();
+    if (!opts.restored) state.play.topic = '';
+    showPlaySetup();
   }
 
   /* ================= Import UI ================= */
@@ -1443,15 +1536,19 @@ body.tab-print.has-deck #print-root {
       '<div class="btn-row"><button class="btn" type="button" id="exportBtn">Export JSON</button><button class="btn ghost" type="button" data-goto="print">Go to print</button></div>';
   }
 
-  function renderFilters() {
-    var sel = $('#filTopic');
+  function topicOptions() {
     var opts = ['<option value="">All topics</option>'];
     state.ix.treeOrder.forEach(function (id) {
       var dep = state.ix.depth.get(id) || 0;
       opts.push('<option value="' + esc(id) + '">' + new Array(dep + 1).join('   ') + esc(topicName(id)) + '</option>');
     });
     if (state.ix.direct.get('')) opts.push('<option value="__none">Unassigned</option>');
-    sel.innerHTML = opts.join('');
+    return opts.join('');
+  }
+
+  function renderFilters() {
+    var sel = $('#filTopic');
+    sel.innerHTML = topicOptions();
     sel.value = state.filters.topic;
     $('#filType').value = state.filters.type;
     $('#filDiff').value = state.filters.diff;
@@ -1815,6 +1912,546 @@ body.tab-print.has-deck #print-root {
     setTimeout(function () { document.body.classList.remove('print-study'); }, 500);
   }
 
+  /* ================= Play tab (on screen games) ================= */
+  var CLOCK_PENALTY = 5, LIVES = 3, MATCH_SIZE = 5;
+  var MODE_ORDER = ['quiz', 'clock', 'survival', 'match', 'typeit'];
+  var MODES = {
+    quiz: { name: 'Quiz', desc: 'Multiple choice. Pick the right answer from up to four options.' },
+    clock: { name: 'Beat the clock', desc: 'Multiple choice against a timer. Each wrong answer costs ' + CLOCK_PENALTY + ' seconds.' },
+    survival: { name: 'Sudden death', desc: 'Get through every chosen card on ' + LIVES + ' lives. Each wrong answer loses one.' },
+    match: { name: 'Match up', desc: 'Pair cards with their answers, ' + MATCH_SIZE + ' to a board. Finish fast for a speed bonus.' },
+    typeit: { name: 'Type it', desc: 'Type the missing words or the term. Uses cloze, definition and short answer cards.' }
+  };
+  var ASK = { qa: 'Pick the answer.', definition: 'Pick the definition.', cloze: 'Pick the missing words.', scenario: 'Pick the best answer.' };
+  var game = null;
+
+  function shuffle(a) {
+    a = a.slice();
+    for (var i = a.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)), t = a[i]; a[i] = a[j]; a[j] = t; }
+    return a;
+  }
+  function fmtTime(ms, up) {
+    var s = Math.max(0, up ? Math.floor(ms / 1000) : Math.ceil(ms / 1000));
+    return Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2);
+  }
+  function fmtNum(n) { return Number(n).toLocaleString(); }
+  // Streak multiplier: x1 for the first 3 in a row, x2 for the next 3, then x3.
+  function comboMult(streak) { return Math.min(3, 1 + Math.floor((streak - 1) / 3)); }
+
+  /* ---- Typed answers ---- */
+  function normAns(s) {
+    return String(s || '').toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '')
+      .replace(/[^\p{L}\p{N}]+/gu, ' ').replace(/(^| )(the|a|an)(?= |$)/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+  // Accepted forms of an answer: as written, without (asides), with them, and with the aside replacing the word before it.
+  function answerForms(a) {
+    var out = [];
+    [a, a.replace(/\([^)]*\)/g, ' '), a.replace(/[()]/g, ' '), a.replace(/\S+\s*\(([^)]*)\)/g, '$1')].forEach(function (r) {
+      var n = normAns(r);
+      if (n && out.indexOf(n) < 0) out.push(n);
+    });
+    return out;
+  }
+  function editDistance(a, b) {
+    if (a === b) return 0;
+    var prev = [], cur, i, j;
+    for (j = 0; j <= b.length; j++) prev.push(j);
+    for (i = 1; i <= a.length; i++) {
+      cur = [i];
+      for (j = 1; j <= b.length; j++) cur.push(Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)));
+      prev = cur;
+    }
+    return prev[b.length];
+  }
+  // Small typos are forgiven on longer answers, but numbers must match exactly.
+  function checkTyped(typed, expected) {
+    var t = normAns(typed), best = -1;
+    if (!t) return { ok: false, exact: false };
+    function digits(s) { return (s.match(/\d+/g) || []).join(' '); }
+    answerForms(expected).forEach(function (f) {
+      if (digits(f) !== digits(t)) return;
+      var tol = f.length <= 4 ? 0 : clamp(Math.floor(f.length / 8), 1, 3);
+      var d = editDistance(t, f);
+      if (d <= tol && (best < 0 || d < best)) best = d;
+    });
+    return { ok: best >= 0, exact: best === 0 };
+  }
+  function typeTask(c) {
+    if (c.type === 'cloze' && CLOZE_TEST.test(c.cloze)) {
+      var n = 0;
+      var prompt = nl2br(esc(c.cloze).replace(/\{\{\s*([^{}]+?)\s*\}\}/g, function () { n++; return '<span class="g-blank">' + n + '</span>'; }));
+      return { prompt: prompt, ask: n > 1 ? 'Type the word or words for each numbered blank.' : 'Type the missing word or words.', answers: clozeAnswers(c.cloze) };
+    }
+    if (c.type === 'definition' && words(c.front) <= 4) return { prompt: nl2br(esc(c.back)), ask: 'Which term is this?', answers: [c.front] };
+    if (c.type !== 'definition' && words(c.back) <= 4) return { prompt: nl2br(esc(c.front)), ask: 'Type the answer.', answers: [c.back] };
+    return null;
+  }
+  function typedAnswerHtml(c) {
+    return c.type === 'cloze' ? faceHtml(c).back : '<b>' + esc(game.task.answers.join('; ')) + '</b>';
+  }
+
+  /* ---- Card pool and setup ---- */
+  function basePool() {
+    var p = state.play, set = p.topic && p.topic !== '__none' ? descendants(p.topic) : null;
+    return state.deck.cards.filter(function (c) {
+      if (p.topic === '__none' && c.topicId) return false;
+      if (set && !set.has(c.topicId)) return false;
+      if (p.diff && String(c.difficulty) !== p.diff) return false;
+      if (p.ticked && state.excluded.has(c.id)) return false;
+      return true;
+    });
+  }
+  function uniqueBacks(cards) {
+    var seen = new Set();
+    return cards.filter(function (c) {
+      var k = normAns(c.back) || c.back;
+      if (seen.has(k)) return false;
+      seen.add(k); return true;
+    });
+  }
+  function playVariant(mode) { return mode === 'clock' ? state.play.time + 's' : mode === 'survival' ? 'all' : state.play.length; }
+  function bestKey(mode, variant) { return state.deck.subject + '|' + mode + '|' + variant; }
+  function getBests() {
+    var b = store.get('ftm:best', {});
+    return b && typeof b === 'object' && !Array.isArray(b) ? b : {};
+  }
+  function gameLength(mode, n) {
+    return mode === 'clock' || mode === 'survival' || state.play.length === 'all' ? n : Math.min(n, +state.play.length);
+  }
+  function poolInfo() {
+    var p = state.play, m = p.mode, all = basePool();
+    var pool = m === 'typeit' ? all.filter(typeTask) : m === 'match' ? uniqueBacks(all) : all;
+    var problem = '';
+    if (!all.length) problem = 'No cards match these choices. Pick a wider topic or difficulty' + (p.ticked ? ', or include unticked cards.' : '.');
+    else if (m === 'typeit' && !pool.length) problem = 'None of these cards can be typed. Type it uses cloze cards, definition cards whose term is four words or fewer, and cards whose answer is four words or fewer.';
+    else if (m !== 'typeit' && pool.length < 2) problem = 'This challenge needs at least 2 cards' + (m === 'match' ? ' with different answers' : '') + '. Pick a wider topic or difficulty.';
+    return { all: all, pool: pool, problem: problem };
+  }
+  function savePlay() { store.set('ftm:play', state.play); }
+
+  function renderPlaySetup() {
+    if (!state.deck) return;
+    var p = state.play;
+    $('#modeGrid').innerHTML = MODE_ORDER.map(function (m) {
+      return '<label class="check mode-card"><input type="radio" name="gmode" value="' + m + '"' + (p.mode === m ? ' checked' : '') + '><span><strong>' +
+        esc(MODES[m].name) + '</strong><span>' + esc(MODES[m].desc) + '</span><span class="best" data-best="' + m + '"></span></span></label>';
+    }).join('');
+    if (p.topic === '__none' ? !state.ix.direct.get('') : p.topic && !state.ix.tById.has(p.topic)) p.topic = '';
+    $('#playTopic').innerHTML = topicOptions();
+    $('#playTopic').value = p.topic;
+    $('#playDiff').value = p.diff;
+    $('#playTicked').checked = p.ticked;
+    updatePlayInfo();
+  }
+
+  function updatePlayInfo() {
+    if (!state.deck) return;
+    var p = state.play, m = p.mode, info = poolInfo(), bests = getBests();
+    MODE_ORDER.forEach(function (k) {
+      var b = bests[bestKey(k, playVariant(k))], el = $('[data-best="' + k + '"]');
+      if (el) el.textContent = typeof b === 'number' ? 'Best: ' + fmtNum(b) : '';
+    });
+    $('#playLenWrap').hidden = m === 'survival';
+    var sel = $('#playLen');
+    if (m === 'clock') {
+      $('#playLenLbl').textContent = 'Time limit';
+      sel.innerHTML = ['60', '90', '120'].map(function (v) { return '<option value="' + v + '">' + v + ' seconds</option>'; }).join('');
+      sel.value = p.time;
+    } else {
+      $('#playLenLbl').textContent = m === 'match' ? 'Pairs per game' : 'Cards per game';
+      sel.innerHTML = '<option value="10">10</option><option value="20">20</option><option value="all">All chosen cards</option>';
+      sel.value = p.length;
+    }
+    var n = info.pool.length, line;
+    if (!info.all.length) line = 'No cards chosen.';
+    else if (m === 'typeit') line = n + ' of ' + plural(info.all.length, 'chosen card') + ' can be typed. This game uses ' + gameLength(m, n) + '.';
+    else if (m === 'clock') line = plural(n, 'card') + ' in play. They come round again, reshuffled, until time runs out.';
+    else if (m === 'survival') line = plural(n, 'card') + ' in play. Get through all of them before you lose ' + LIVES + ' lives.';
+    else line = plural(n, 'card') + ' in play' + (m === 'match' && n < info.all.length ? ' (repeated answers are left out)' : '') + '. This game uses ' + gameLength(m, n) + '.';
+    $('#playPool').textContent = line;
+    $('#playProblem').textContent = info.problem;
+    $('#playProblem').hidden = !info.problem;
+    $('#playStart').disabled = !!info.problem;
+  }
+
+  function showPlaySetup() {
+    stopGame();
+    $('#playStage').hidden = true;
+    $('#playStage').innerHTML = '';
+    $('#playSetup').hidden = false;
+    renderPlaySetup();
+  }
+
+  /* ---- Game clock. Holds (tab hidden, answer feedback) pause it. ---- */
+  function elapsed() { var g = game; return g.acc + (g.holds.size || g.over ? 0 : Date.now() - g.t0); }
+  function remaining() { return game.limit - elapsed() - game.penalty; }
+  function hold(r) {
+    var g = game;
+    if (!g || g.over || g.holds.has(r)) return;
+    if (!g.holds.size) g.acc += Date.now() - g.t0;
+    g.holds.add(r);
+  }
+  function release(r) {
+    var g = game;
+    if (!g || g.over || !g.holds.has(r)) return;
+    g.holds.delete(r);
+    if (!g.holds.size) g.t0 = Date.now();
+  }
+  function later(ms, fn) {
+    var g = game;
+    g.pending.push(setTimeout(function () { if (game === g && !g.over) fn(); }, ms));
+  }
+  function onTick() {
+    var g = game;
+    if (!g || g.over || g.holds.size) return;
+    var el = $('#hudTime');
+    if (g.mode === 'clock') {
+      var r = remaining(), bar = $('#hudBar');
+      if (el) el.textContent = fmtTime(r);
+      if (bar) bar.style.width = clamp(r / g.limit * 100, 0, 100) + '%';
+      if (r <= 0) endGame('time');
+    } else if (g.mode === 'match' && el) el.textContent = fmtTime(elapsed(), true);
+  }
+
+  /* ---- Game flow ---- */
+  function startFromSetup() {
+    var info = poolInfo();
+    if (info.problem) { updatePlayInfo(); return; }
+    startGame(state.play.mode, info.pool);
+  }
+
+  function startGame(mode, pool, opts) {
+    opts = opts || {};
+    stopGame();
+    var list = shuffle(pool);
+    if (mode === 'typeit') list = list.filter(typeTask);
+    if (mode === 'match') list = uniqueBacks(list);
+    if (!opts.practice) list = list.slice(0, gameLength(mode, list.length));
+    var g = {
+      mode: mode, practice: !!opts.practice, variant: playVariant(mode), pool: list.slice(), queue: list, i: 0,
+      score: 0, streak: 0, prevStreak: 0, bestStreak: 0, right: 0, wrong: 0, lives: LIVES, penalty: 0,
+      missed: [], missedIds: new Set(), acc: 0, t0: Date.now(), holds: new Set(), pending: [], over: false
+    };
+    if (mode === 'clock') g.limit = +state.play.time * 1000;
+    if (mode === 'match') {
+      g.boards = [];
+      for (var i = 0; i < list.length; i += MATCH_SIZE) g.boards.push(list.slice(i, i + MATCH_SIZE));
+      if (g.boards.length > 1 && g.boards[g.boards.length - 1].length < 2) {
+        var last = g.boards.pop();
+        g.boards[g.boards.length - 1] = g.boards[g.boards.length - 1].concat(last);
+      }
+      g.b = 0; g.pairs = list.length;
+    }
+    game = g;
+    if (document.hidden) hold('hidden');
+    g.tick = setInterval(onTick, 200);
+    $('#playSetup').hidden = true;
+    $('#playStage').hidden = false;
+    window.scrollTo(0, 0);
+    nextTurn();
+  }
+
+  function stopGame() {
+    if (!game) return;
+    clearInterval(game.tick);
+    game.pending.forEach(clearTimeout);
+    game.over = true;
+    game = null;
+  }
+
+  function nextTurn() {
+    var g = game;
+    if (g.mode === 'match') { renderMatch(); return; }
+    if (g.mode === 'clock') {
+      if (remaining() <= 0) { endGame('time'); return; }
+      if (g.i >= g.queue.length) {
+        var more = shuffle(g.pool);
+        if (more.length > 1 && more[0] === g.queue[g.queue.length - 1]) more.push(more.shift());
+        g.queue = g.queue.concat(more);
+      }
+    } else if (g.i >= g.queue.length) { endGame('done'); return; }
+    g.card = g.queue[g.i];
+    g.answered = false; g.overridden = false;
+    if (g.mode === 'typeit') { g.task = typeTask(g.card); renderTypeQ(); }
+    else { g.choices = choicesFor(g.card); renderQuestion(); }
+  }
+  function advance() { game.i++; nextTurn(); }
+
+  function scoreAnswer(ok, card) {
+    var g = game;
+    card = card || g.card;
+    g.prevStreak = g.streak;
+    if (ok) {
+      g.right++; g.streak++;
+      if (g.streak > g.bestStreak) g.bestStreak = g.streak;
+      var gain = 100 * comboMult(g.streak);
+      g.score += gain;
+      return gain;
+    }
+    g.wrong++; g.streak = 0;
+    if (!g.missedIds.has(card.id)) { g.missedIds.add(card.id); g.missed.push(card); }
+    if (g.mode === 'clock') g.penalty += CLOCK_PENALTY * 1000;
+    if (g.mode === 'survival') g.lives = Math.max(0, g.lives - 1);
+    return 0;
+  }
+
+  function hudHtml() {
+    var g = game, m = g.mode, items = [], pct;
+    items.push('<span class="hud-mode">' + esc(MODES[m].name) + (g.practice ? ' (practice)' : '') + '</span>');
+    if (m === 'clock') {
+      items.push('<span>Time <b id="hudTime">' + fmtTime(remaining()) + '</b></span><span>Right <b>' + g.right + '</b></span>');
+      pct = remaining() / g.limit;
+    } else if (m === 'match') {
+      if (g.boards.length > 1) items.push('<span>Board <b>' + (g.b + 1) + '</b> of ' + g.boards.length + '</span>');
+      items.push('<span>Time <b id="hudTime">' + fmtTime(elapsed(), true) + '</b></span>');
+      pct = (g.b + (g.matched || 0) / g.boards[g.b].length) / g.boards.length;
+    } else {
+      items.push('<span>Card <b>' + Math.min(g.i + 1, g.queue.length) + '</b> of ' + g.queue.length + '</span>');
+      pct = (g.i + (g.answered ? 1 : 0)) / g.queue.length;
+    }
+    if (m === 'survival') {
+      items.push('<span class="lives" role="img" aria-label="' + plural(g.lives, 'life', 'lives') + ' left">' +
+        new Array(g.lives + 1).join('♥') + new Array(LIVES - g.lives + 1).join('♡') + '</span>');
+    }
+    items.push('<span>Score <b>' + fmtNum(g.score) + '</b></span>');
+    if (g.streak >= 2) items.push('<span class="chip">Streak ' + g.streak + (comboMult(g.streak) > 1 ? ', x' + comboMult(g.streak) + ' points' : '') + '</span>');
+    items.push('<span class="spacer"></span><button class="btn small ghost" type="button" data-g="quit">Quit</button>');
+    return '<div class="hud">' + items.join('') + '</div><div class="g-bar" aria-hidden="true"><span id="hudBar" style="width:' + clamp(pct * 100, 0, 100).toFixed(1) + '%"></span></div>';
+  }
+  function updateHud() { var h = $('#gHud'); if (h && game) h.innerHTML = hudHtml(); }
+  function stage(html) {
+    $('#playStage').innerHTML = '<div class="box game"><div id="gHud">' + hudHtml() + '</div>' + html + '</div>';
+  }
+  function crumbHtml(c) {
+    var crumb = topicPath(c.topicId).join(' > ');
+    return crumb ? '<div class="g-crumb">' + esc(crumb) + '</div>' : '';
+  }
+  function nextLabel() {
+    var g = game;
+    return (g.mode === 'survival' && g.lives <= 0) || g.i + 1 >= g.queue.length ? 'See results' : 'Next';
+  }
+  function livesNote() {
+    var g = game;
+    if (g.mode !== 'survival') return '';
+    return g.lives ? '. ' + plural(g.lives, 'life', 'lives') + ' left.' : '. No lives left.';
+  }
+  function showFeedback(ok, head, body, extra) {
+    var g = game, clock = g.mode === 'clock';
+    $('#gFeedback').innerHTML = '<div class="msg ' + (ok ? 'ok' : 'err') + ' g-feedback"><h3>' + esc(head) + '</h3>' + (body ? '<p>' + body + '</p>' : '') +
+      (clock ? '' : '<div class="btn-row"><button class="btn primary" type="button" id="gNext" data-g="next">' + nextLabel() + '</button>' + (extra || '') + '</div>') + '</div>';
+    updateHud();
+    if (clock) {
+      hold('feedback');
+      later(ok ? 500 : 1500, function () { release('feedback'); advance(); });
+    } else $('#gNext').focus();
+  }
+
+  /* ---- Multiple choice (quiz, clock, survival) ---- */
+  // Distractors come from the whole deck, preferring the same card type and topic so answers look alike.
+  function choicesFor(card) {
+    var seen = new Set([normAns(card.back) || card.back]), picks = [];
+    var cands = shuffle(state.deck.cards.filter(function (c) { return c.id !== card.id; })).map(function (c) {
+      return { c: c, s: (c.type === card.type ? 2 : 0) + (c.topicId && c.topicId === card.topicId ? 1 : 0) };
+    }).sort(function (a, b) { return b.s - a.s; });
+    for (var i = 0; i < cands.length && picks.length < 3; i++) {
+      var k = normAns(cands[i].c.back) || cands[i].c.back;
+      if (seen.has(k)) continue;
+      seen.add(k); picks.push(cands[i].c.back);
+    }
+    var options = shuffle(picks.concat([card.back]));
+    return { options: options, correct: options.indexOf(card.back) };
+  }
+
+  function renderQuestion() {
+    var g = game, c = g.card, n = g.choices.options.length;
+    var opts = g.choices.options.map(function (o, i) {
+      return '<button class="btn g-opt" type="button" data-g="opt" data-i="' + i + '"><span class="k" aria-hidden="true">' + (i + 1) + '</span><span class="t">' + nl2br(esc(o)) + '</span></button>';
+    }).join('');
+    stage(crumbHtml(c) + '<div class="g-prompt" tabindex="-1">' + faceHtml(c).front + '</div>' +
+      '<p class="g-ask">' + ASK[c.type] + ' <span class="g-keys">Keys 1 to ' + n + ' work too.</span></p>' +
+      '<div class="g-opts">' + opts + '</div><div id="gFeedback" aria-live="polite"></div>');
+    $('#playStage .g-prompt').focus();
+  }
+
+  function answerChoice(i) {
+    var g = game;
+    if (!g || g.over || g.answered) return;
+    g.answered = true;
+    var ok = i === g.choices.correct, gain = scoreAnswer(ok);
+    $$('#playStage .g-opt').forEach(function (b, k) {
+      b.disabled = true;
+      if (k === g.choices.correct) b.classList.add('right');
+      else if (k === i) b.classList.add('wrong');
+    });
+    showFeedback(ok, ok ? 'Right! +' + gain : 'Not quite' + livesNote(), ok ? '' : '<strong>Answer:</strong> ' + faceHtml(g.card).back);
+  }
+
+  /* ---- Type it ---- */
+  function renderTypeQ() {
+    var g = game, t = g.task, multi = t.answers.length > 1;
+    var inputs = t.answers.map(function (a, i) {
+      return (multi ? '<label for="gIn' + i + '">Blank ' + (i + 1) + '</label>' : '') +
+        '<input type="text" class="g-in" id="gIn' + i + '"' + (multi ? '' : ' aria-label="Your answer"') + ' autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">';
+    }).join('');
+    stage(crumbHtml(g.card) + '<div class="g-prompt" tabindex="-1">' + t.prompt + '</div><p class="g-ask">' + esc(t.ask) + '</p>' +
+      '<form id="gTypeForm" novalidate autocomplete="off">' + inputs + '<div class="btn-row"><button class="btn primary" type="submit" id="gCheck">Check</button>' +
+      '<button class="btn ghost" type="button" id="gSkip" data-g="skip">I don\'t know</button></div></form><div id="gFeedback" aria-live="polite"></div>');
+    $('#gIn0').focus();
+  }
+
+  function checkTypeQ() {
+    var g = game;
+    if (!g || g.over || g.answered || g.mode !== 'typeit') return;
+    var ins = $$('#playStage .g-in');
+    if (!ins.some(function (x) { return x.value.trim(); })) { ins[0].focus(); return; }
+    finishTyped(ins.map(function (x, i) { return checkTyped(x.value, g.task.answers[i]); }));
+  }
+
+  // res is null when the player skipped.
+  function finishTyped(res) {
+    var g = game;
+    if (!g || g.over || g.answered) return;
+    g.answered = true;
+    var ok = !!res && res.every(function (r) { return r.ok; });
+    var exact = ok && res.every(function (r) { return r.exact; });
+    var gain = scoreAnswer(ok);
+    $$('#playStage .g-in').forEach(function (x, i) { x.readOnly = true; if (res) x.classList.add(res[i].ok ? 'right' : 'wrong'); });
+    $('#gCheck').disabled = true; $('#gSkip').disabled = true;
+    showFeedback(ok, ok ? (exact ? 'Right! +' : 'Close enough. +') + gain : res ? 'Not quite' : 'Here is the answer',
+      '<strong>Answer:</strong> ' + typedAnswerHtml(g.card),
+      res && !ok ? '<button class="btn" type="button" data-g="override">I was right</button>' : '');
+  }
+
+  function overrideTyped() {
+    var g = game;
+    if (!g || g.over || !g.answered || g.overridden || g.mode !== 'typeit') return;
+    g.overridden = true;
+    g.wrong--;
+    g.missedIds.delete(g.card.id);
+    g.missed = g.missed.filter(function (c) { return c !== g.card; });
+    g.streak = g.prevStreak;
+    var gain = scoreAnswer(true);
+    $$('#playStage .g-in').forEach(function (x) { x.classList.remove('wrong'); x.classList.add('right'); });
+    showFeedback(true, 'Counted as right. +' + gain, '<strong>Answer:</strong> ' + typedAnswerHtml(g.card));
+  }
+
+  /* ---- Match up ---- */
+  function renderMatch() {
+    var g = game, board = g.boards[g.b];
+    g.sel = null; g.matched = 0;
+    function tile(c, side) {
+      return '<button class="btn m-tile" type="button" data-g="m" data-side="' + side + '" data-id="' + esc(c.id) + '" aria-pressed="false">' +
+        (side === 'l' ? faceHtml(c).front : nl2br(esc(c.back))) + '</button>';
+    }
+    stage('<p class="g-ask">Pick a card on the left, then its answer on the right.</p><div class="match-grid">' +
+      '<div class="match-col" role="group" aria-label="Cards">' + shuffle(board).map(function (c) { return tile(c, 'l'); }).join('') + '</div>' +
+      '<div class="match-col" role="group" aria-label="Answers">' + shuffle(board).map(function (c) { return tile(c, 'r'); }).join('') + '</div>' +
+      '</div><div id="gFeedback" aria-live="polite" class="hint"></div>');
+  }
+
+  function matchPick(btn) {
+    var g = game;
+    if (!g || g.over || btn.disabled) return;
+    var side = btn.dataset.side;
+    function setSel(b, on) { b.classList.toggle('sel', on); b.setAttribute('aria-pressed', String(on)); }
+    if (!g.sel || g.sel.dataset.side === side) {
+      var same = g.sel === btn;
+      if (g.sel) setSel(g.sel, false);
+      g.sel = same ? null : btn;
+      if (!same) setSel(btn, true);
+      return;
+    }
+    var a = g.sel, board = g.boards[g.b];
+    g.sel = null;
+    setSel(a, false);
+    var ok = a.dataset.id === btn.dataset.id;
+    var promptId = side === 'l' ? btn.dataset.id : a.dataset.id;
+    var gain = scoreAnswer(ok, board.find(function (c) { return c.id === promptId; }));
+    if (ok) {
+      [a, btn].forEach(function (x) { x.classList.add('done'); x.disabled = true; });
+      g.matched++;
+      $('#gFeedback').textContent = 'Matched. +' + gain;
+      if (g.matched === board.length) {
+        later(450, function () { g.b++; if (g.b >= g.boards.length) endGame('done'); else renderMatch(); });
+      } else {
+        var nxt = $('#playStage .m-tile[data-side="l"]:not(:disabled)');
+        if (nxt) nxt.focus();
+      }
+    } else {
+      [a, btn].forEach(function (x) { x.classList.add('wrong'); });
+      later(600, function () { a.classList.remove('wrong'); btn.classList.remove('wrong'); });
+      $('#gFeedback').textContent = 'Not a match. Try again.';
+    }
+    updateHud();
+  }
+
+  /* ---- Results ---- */
+  function endGame(reason) {
+    var g = game;
+    if (!g || g.over) return;
+    g.time = elapsed();
+    g.acc = g.time; g.over = true; g.reason = reason;
+    clearInterval(g.tick);
+    g.pending.forEach(clearTimeout); g.pending = [];
+    if (g.mode === 'match') {
+      // Up to 6 seconds a pair earns a bonus: 10 points for every second under that.
+      g.bonus = Math.max(0, Math.round((g.pairs * 6000 - g.time) / 100));
+      g.score += g.bonus;
+    }
+    if (!g.practice) {
+      var bests = getBests(), k = bestKey(g.mode, g.variant);
+      g.prevBest = typeof bests[k] === 'number' ? bests[k] : null;
+      if (g.score > 0 && (g.prevBest == null || g.score > g.prevBest)) {
+        bests[k] = g.score; store.set('ftm:best', bests); g.newBest = true;
+      }
+    }
+    renderResults();
+  }
+
+  function renderResults() {
+    var g = game, m = g.mode, total = g.right + g.wrong;
+    var acc = total ? Math.round(g.right / total * 100) + '%' : 'n/a';
+    var title = g.reason === 'time' ? 'Time\'s up' : g.reason === 'lives' ? 'Out of lives' : m === 'survival' ? 'You survived' : m === 'match' ? 'All matched' : 'Finished';
+    var sub = '';
+    if (m === 'survival') sub = g.reason === 'lives' ? 'You reached card ' + (g.i + 1) + ' of ' + g.queue.length + '.' : 'You got through all ' + plural(g.queue.length, 'card') + ' with ' + plural(g.lives, 'life', 'lives') + ' to spare.';
+    var stats;
+    if (m === 'match') stats = [['Pairs', g.pairs], ['Mistakes', g.wrong], ['Time', fmtTime(g.time, true)], ['Speed bonus', '+' + fmtNum(g.bonus)], ['Best streak', g.bestStreak]];
+    else if (m === 'clock') stats = [['Answered', total], ['Right', g.right], ['Accuracy', acc], ['Best streak', g.bestStreak]];
+    else stats = [['Right', g.right + ' of ' + total], ['Accuracy', acc], ['Best streak', g.bestStreak], ['Time', fmtTime(g.time, true)]];
+    var best = g.practice ? '<p class="hint">Practice round, so the score is not saved.</p>'
+      : g.newBest ? '<p><span class="chip">New best' + (g.prevBest != null ? ', up from ' + fmtNum(g.prevBest) : '') + '</span></p>'
+      : g.prevBest != null ? '<p class="hint">Your best for this challenge is ' + fmtNum(g.prevBest) + '.</p>' : '';
+    var missed = g.missed.length
+      ? '<h3>' + plural(g.missed.length, 'card') + ' to review</h3><ol class="g-missed">' + g.missed.map(function (c) {
+        var fh = faceHtml(c);
+        return '<li><div class="mq">' + fh.front + '</div><div class="ma">' + fh.back + '</div></li>';
+      }).join('') + '</ol>'
+      : total ? '<p>No mistakes. Try a longer game or a harder challenge.</p>' : '';
+    $('#playStage').innerHTML = '<div class="box game"><div class="g-results" tabindex="-1">' +
+      '<p class="hud-mode" style="margin:0">' + esc(MODES[m].name) + (g.practice ? ' (practice)' : '') + '</p><h2>' + esc(title) + '</h2>' +
+      (sub ? '<p>' + esc(sub) + '</p>' : '') + '<div class="big-score">' + fmtNum(g.score) + '</div><p class="hint" style="margin-top:0">points</p>' + best +
+      '<div class="stat-grid">' + stats.map(function (s) { return '<div class="stat"><div class="v">' + esc(s[1]) + '</div><div class="l">' + esc(s[0]) + '</div></div>'; }).join('') + '</div>' +
+      missed + '<div class="btn-row"><button class="btn primary" type="button" data-g="again">' + (g.practice ? 'Practise again' : 'Play again') + '</button>' +
+      (g.missed.length ? '<button class="btn" type="button" data-g="practice">Practise the ' + plural(g.missed.length, 'missed card') + '</button>' : '') +
+      '<button class="btn ghost" type="button" data-g="setup">Change challenge</button></div></div></div>';
+    $('#playStage .g-results').focus();
+  }
+
+  function onStageClick(e) {
+    var el = e.target.closest('[data-g]');
+    var g = game;
+    if (!el || !g) return;
+    var act = el.dataset.g;
+    if (act === 'opt') answerChoice(+el.dataset.i);
+    else if (act === 'next') { if (g.mode === 'survival' && g.lives <= 0) endGame('lives'); else advance(); }
+    else if (act === 'm') matchPick(el);
+    else if (act === 'skip') finishTyped(null);
+    else if (act === 'override') overrideTyped();
+    else if (act === 'quit' || act === 'setup') showPlaySetup();
+    else if (act === 'again') { if (g.practice) startGame(g.mode, g.pool, { practice: true }); else startFromSetup(); }
+    else if (act === 'practice') startGame(g.mode === 'typeit' ? 'typeit' : 'quiz', g.missed, { practice: true });
+  }
+
   /* ================= Tabs, theme, restore ================= */
   function showTab(name) {
     state.tab = name;
@@ -1826,6 +2463,8 @@ body.tab-print.has-deck #print-root {
     $$('main > section').forEach(function (s) { s.hidden = s.id !== 'tab-' + name; });
     document.body.className = document.body.className.replace(/\btab-\S+/g, '').trim() + ' tab-' + name;
     if (name === 'print') ensurePrint();
+    if (name !== 'play') hold('tab');
+    else { release('tab'); if (!game) updatePlayInfo(); }
     store.set('ftm:tab', name);
     window.scrollTo(0, 0);
   }
@@ -1992,6 +2631,39 @@ body.tab-print.has-deck #print-root {
     });
     window.addEventListener('afterprint', function () { document.body.classList.remove('print-study'); });
 
+    // Play
+    var pl = store.get('ftm:play', null);
+    if (pl && typeof pl === 'object') {
+      if (MODE_ORDER.indexOf(pl.mode) >= 0) state.play.mode = pl.mode;
+      if (typeof pl.topic === 'string') state.play.topic = pl.topic;
+      if (['', '1', '2', '3'].indexOf(pl.diff) >= 0) state.play.diff = pl.diff;
+      if (typeof pl.ticked === 'boolean') state.play.ticked = pl.ticked;
+      if (['10', '20', 'all'].indexOf(pl.length) >= 0) state.play.length = pl.length;
+      if (['60', '90', '120'].indexOf(pl.time) >= 0) state.play.time = pl.time;
+    }
+    $('#modeGrid').addEventListener('change', function (e) {
+      if (e.target.name !== 'gmode') return;
+      state.play.mode = e.target.value; savePlay(); updatePlayInfo();
+    });
+    $('#playTopic').addEventListener('change', function () { state.play.topic = this.value; savePlay(); updatePlayInfo(); });
+    $('#playDiff').addEventListener('change', function () { state.play.diff = this.value; savePlay(); updatePlayInfo(); });
+    $('#playTicked').addEventListener('change', function () { state.play.ticked = this.checked; savePlay(); updatePlayInfo(); });
+    $('#playLen').addEventListener('change', function () {
+      if (state.play.mode === 'clock') state.play.time = this.value; else state.play.length = this.value;
+      savePlay(); updatePlayInfo();
+    });
+    $('#playStart').addEventListener('click', startFromSetup);
+    $('#playStage').addEventListener('click', onStageClick);
+    $('#playStage').addEventListener('submit', function (e) { e.preventDefault(); checkTypeQ(); });
+    document.addEventListener('keydown', function (e) {
+      var g = game;
+      if (!g || g.over || g.answered || state.tab !== 'play' || e.altKey || e.ctrlKey || e.metaKey) return;
+      if (g.mode === 'match' || g.mode === 'typeit' || !/^[1-9]$/.test(e.key)) return;
+      if (e.target.closest && e.target.closest('input, textarea, select')) return;
+      if (+e.key <= g.choices.options.length) { e.preventDefault(); answerChoice(+e.key - 1); }
+    });
+    document.addEventListener('visibilitychange', function () { if (document.hidden) hold('hidden'); else release('hidden'); });
+
     // Restore saved deck
     var saved = store.get('ftm:deck', null);
     if (saved && saved.deck && Array.isArray(saved.deck.cards) && saved.deck.cards.length) {
@@ -2005,12 +2677,12 @@ body.tab-print.has-deck #print-root {
       } catch (e) { store.del('ftm:deck'); }
     }
     var lastTab = store.get('ftm:tab', 'prompt');
-    if (['prompt', 'import', 'cards', 'order', 'print'].indexOf(lastTab) < 0) lastTab = 'prompt';
+    if (['prompt', 'import', 'cards', 'order', 'print', 'play'].indexOf(lastTab) < 0) lastTab = 'prompt';
     showTab(lastTab);
   }
 
   // Exposed for testing in the browser console.
-  window.FTM = { parseInput: parseInput, validateDeck: validateDeck, buildPrompt: buildPrompt, computeStudyOrder: computeStudyOrder, state: state, buildPrint: buildPrint };
+  window.FTM = { parseInput: parseInput, validateDeck: validateDeck, buildPrompt: buildPrompt, computeStudyOrder: computeStudyOrder, state: state, buildPrint: buildPrint, checkTyped: checkTyped, startGame: startGame };
 
   init();
 })();
