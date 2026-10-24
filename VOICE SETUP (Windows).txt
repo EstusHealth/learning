@@ -1,0 +1,60 @@
+Flashcards: how to set up natural voices (VoiceStudio) on Windows
+
+Voice mode can use VoiceStudio, a free app that gives the flashcards natural,
+human-sounding voices and understands your spoken answers. Everything runs on
+your own computer. Setting it up takes about 15 minutes the first time.
+
+STEP 1. Download the flashcards
+  1. Open this link. The download starts by itself:
+     https://github.com/EstusHealth/learning/archive/refs/heads/claude/funny-shannon-ukgbkl.zip
+  2. Open your Downloads folder, right-click the ZIP file and choose
+     "Extract All...", then click "Extract".
+     (Do not just double-click into the ZIP. Windows needs the files
+     extracted before they can run.)
+
+STEP 2. Start the flashcards
+  1. In the extracted folder, double-click "Start Flashcards".
+     - If a blue box says "Windows protected your PC", click "More info",
+       then "Run anyway".
+  2. The first time, the Microsoft Store may open on a program called Python.
+     Click "Get" or "Install", wait until it has finished, then double-click
+     "Start Flashcards" again. You only need to do this once.
+  3. A black window opens and the flashcards open in your browser.
+     Leave the black window open while you play. Close it when you are done.
+
+STEP 3. Install VoiceStudio
+  1. Go to https://github.com/debpalash/VoiceStudio/releases/latest
+  2. Under "Assets", click the file whose name ends in "win-x64.exe".
+  3. Open the downloaded file to install it. If Windows says it protected
+     your PC, click "More info", then "Run anyway".
+  4. Open VoiceStudio. The first start can take a few minutes while it
+     downloads its voice models.
+  5. So it can understand speech: in VoiceStudio, open "Transcriptions" and
+     download the recommended model if it offers one.
+
+STEP 4. Turn on voice mode
+  1. In the flashcards, load your deck (or click "Try sample"), then go to
+     the "Play" tab.
+  2. Tick "Voice mode" and set "Voice engine" to "VoiceStudio".
+  3. A three-step checklist appears. Each step turns green by itself.
+     When all three are green, pick a voice and press "Start".
+  4. When the browser asks to use your microphone, click "Allow".
+
+Every time after that: open VoiceStudio, then double-click "Start Flashcards".
+
+If something goes wrong
+  - The checklist says "You opened the file directly": close that tab and
+    double-click "Start Flashcards" instead of "index.html".
+  - It keeps saying "Waiting for VoiceStudio": make sure VoiceStudio is open
+    and has finished starting. The page notices by itself within a few
+    seconds.
+  - It reads aloud but does not understand you: in VoiceStudio, open
+    "Transcriptions" (or "Settings > Models > Dictation") and download the
+    recommended model.
+  - It hears itself and stops reading: turn off "Answer while it reads", or
+    use headphones.
+  - Nothing happens when you speak: check the microphone is allowed (the
+    small icon at the left of the browser's address bar) and press "Mic".
+
+VoiceStudio is a separate free program with its own licence (AGPL-3.0). Only
+clone voices you have permission to use.

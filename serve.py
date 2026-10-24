@@ -6,6 +6,8 @@ and VoiceStudio only accepts its own window by default. This script serves
 index.html at http://localhost:8765 and forwards /voicestudio/* to VoiceStudio,
 so the page and the speech API share one address. Nothing leaves your computer.
 
+On Windows, just double-click "Start Flashcards". It runs this script.
+
 Usage:
     python3 serve.py                      # then pick Play > Voice mode > VoiceStudio
     python3 serve.py --port 9000
@@ -106,6 +108,21 @@ class Handler(http.server.BaseHTTPRequestHandler):
             sys.stderr.write('%s %s\n' % (self.log_date_time_string(), fmt % args))
 
 
+class Server(http.server.ThreadingHTTPServer):
+    # On Windows, address reuse lets two programs share one port, so a busy port would not be noticed.
+    allow_reuse_address = os.name != 'nt'
+    daemon_threads = True
+
+
+def flashcards_at(port):
+    """True when this app is already being served on the port."""
+    try:
+        with urllib.request.urlopen('http://127.0.0.1:%d/' % port, timeout=2) as r:
+            return b'Flashcard Template Maker' in r.read(4000)
+    except Exception:
+        return False
+
+
 def voicestudio_running(upstream):
     try:
         with urllib.request.urlopen(upstream + '/health', timeout=3):
@@ -122,19 +139,38 @@ def main():
     ap.add_argument('--no-browser', action='store_true', help='do not open the browser')
     args = ap.parse_args()
 
-    try:
-        server = http.server.ThreadingHTTPServer(('127.0.0.1', args.port), Handler)
-    except OSError as e:
-        sys.exit('Could not use port %d (%s). Try another one, for example: python3 serve.py --port 8790' % (args.port, e.strerror))
+    # If the port is busy because the flashcards are already open, reuse that copy;
+    # otherwise try the next few ports.
+    server = None
+    for port in range(args.port, args.port + 11):
+        try:
+            server = Server(('127.0.0.1', port), Handler)
+            break
+        except OSError:
+            if flashcards_at(port):
+                url = 'http://localhost:%d/' % port
+                print('Flashcards is already running. Opening it in your browser: ' + url)
+                if not args.no_browser:
+                    webbrowser.open(url)
+                return
+    if server is None:
+        sys.exit('Could not start: ports %d to %d are all in use. Restart the computer and try again.' % (args.port, args.port + 10))
     server.upstream = args.voicestudio.rstrip('/')
-    url = 'http://localhost:%d/' % args.port
+    url = 'http://localhost:%d/' % server.server_address[1]
 
-    print('Flashcard Template Maker: ' + url)
+    print('')
+    print('  Flashcards is running.')
+    print('  Your browser should open by itself. If it does not, open this address:')
+    print('      ' + url)
+    print('')
     if voicestudio_running(server.upstream):
-        print('VoiceStudio found at ' + server.upstream + '.')
+        print('  VoiceStudio is open and ready for voice mode.')
     else:
-        print('VoiceStudio is not running at ' + server.upstream + ' yet. Open it, then press Connect in Play > Voice mode.')
-    print('Press Ctrl+C to stop.')
+        print('  VoiceStudio is not open yet. Open it before using voice mode;')
+        print('  the flashcards page will notice when it is ready.')
+    print('')
+    print('  Keep this window open while you play. Close it when you are done.')
+    print('')
     if not args.no_browser:
         webbrowser.open(url)
     try:

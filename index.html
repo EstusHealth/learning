@@ -334,6 +334,22 @@ details ul { margin: 8px 0 0; padding-left: 20px; font-size: .92rem; }
 .voice-chip.live { background: var(--danger-soft); color: var(--danger); }
 .voice-chip.live::before { opacity: 1; animation: g-pulse 1.2s infinite; }
 @keyframes g-pulse { 50% { opacity: .2; } }
+.setup-title { margin: 16px 0 4px; font-size: 1rem; }
+.setup-steps { list-style: none; padding: 0; margin: 10px 0 0; display: grid; gap: 8px; }
+.setup-steps li { display: flex; gap: 12px; align-items: flex-start; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+.setup-steps li .hint { margin: 2px 0 8px; }
+.setup-steps li > div { min-width: 0; flex: 1; }
+.setup-steps .msg { margin: 6px 0 0; }
+.setup-steps .tick {
+  flex: none; width: 26px; height: 26px; border-radius: 50%; border: 2px solid var(--border);
+  display: grid; place-items: center; font-weight: 800; font-size: .85rem; color: var(--muted); margin-top: 1px;
+}
+.setup-steps li.now { border-color: var(--accent); background: var(--accent-soft); }
+.setup-steps li.now .tick { border-color: var(--accent); color: var(--accent); }
+.setup-steps li.done .tick { background: var(--ok); border-color: var(--ok); color: var(--surface); }
+.setup-steps li.done .tick::before { content: "\2713"; }
+.studio-adv { margin-top: 12px; }
+.studio-adv summary { font-size: .88rem; color: var(--muted); }
 .studio-ok { color: var(--ok); font-weight: 600; }
 .studio-err { color: var(--danger); font-weight: 600; }
 .g-heard { color: var(--muted); font-size: .9rem; font-style: italic; margin: 10px 0 0; min-height: 1.4em; }
@@ -700,11 +716,32 @@ body.tab-print.has-deck #print-root {
             <div id="browserVoiceWrap"><label for="playVoiceName">Voice</label><select id="playVoiceName"></select></div>
           </div>
           <div id="studioOpts" hidden>
-            <div class="btn-row" style="align-items:flex-end;margin-top:10px">
-              <div style="flex:1;min-width:220px"><label for="studioUrl" style="margin-top:0">VoiceStudio address</label><input id="studioUrl" type="text" spellcheck="false" autocomplete="off"></div>
-              <button class="btn" type="button" id="studioConnect">Connect</button>
-            </div>
+            <h3 class="setup-title">Set up VoiceStudio</h3>
+            <p class="hint" style="margin-top:0">Three steps. Each one turns green by itself when it is done.</p>
+            <ol class="setup-steps">
+              <li id="stepServe"><span class="tick" aria-hidden="true"></span><div>
+                <strong>Open the flashcards with "Start Flashcards"</strong>
+                <p class="hint">In the flashcards folder, double-click <b>Start Flashcards</b>. It opens this page in a way that lets it talk to VoiceStudio. The first time, it may ask you to install a free program called Python from the Microsoft Store.</p>
+                <div class="msg warn" id="fileWarn" hidden><h3>You opened the file directly</h3><p>VoiceStudio cannot connect this way. Close this tab, open the flashcards folder and double-click <b>Start Flashcards</b> instead.</p></div>
+              </div></li>
+              <li id="stepInstall"><span class="tick" aria-hidden="true"></span><div>
+                <strong>Install VoiceStudio</strong>
+                <p class="hint">On the download page, click the file whose name ends in <b>win-x64.exe</b>, then open it to install. If Windows says it protected your PC, click <b>More info</b>, then <b>Run anyway</b>.</p>
+                <a class="btn small" href="https://github.com/debpalash/VoiceStudio/releases/latest" target="_blank" rel="noopener noreferrer">Open the VoiceStudio download page</a>
+              </div></li>
+              <li id="stepRun"><span class="tick" aria-hidden="true"></span><div>
+                <strong>Open VoiceStudio and keep it open</strong>
+                <p class="hint">The first start can take a few minutes while it downloads its voice models. You can minimise it, but do not close it while you play.</p>
+              </div></li>
+            </ol>
             <p class="hint" id="studioStatus" role="status"></p>
+            <div class="btn-row" style="margin-top:6px"><button class="btn small" type="button" id="studioConnect">Check again</button></div>
+            <details class="studio-adv">
+              <summary>Advanced</summary>
+              <label for="studioUrl">VoiceStudio address</label><input id="studioUrl" type="text" spellcheck="false" autocomplete="off">
+              <p class="hint">Leave this empty unless VoiceStudio runs on another computer.</p>
+            </details>
+            <div id="studioReady" hidden>
             <div class="filters" style="margin-top:8px">
               <div><label for="studioVoice">VoiceStudio voice</label><select id="studioVoice"><option value="">Default</option></select></div>
               <div><label for="studioSpeed">Speed</label><select id="studioSpeed">
@@ -712,6 +749,7 @@ body.tab-print.has-deck #print-root {
               </select></div>
             </div>
             <label class="check" style="margin-top:10px"><input type="checkbox" id="bargeIn"><span><strong>Answer while it reads</strong><span>Start talking at any time to cut the question short. Best with headphones, so the microphone does not hear the speakers.</span></span></label>
+            </div>
           </div>
           <div class="btn-row" style="margin-top:10px"><button class="btn" type="button" id="voiceTest">Test voice</button></div>
         </div>
@@ -2567,6 +2605,7 @@ body.tab-print.has-deck #print-root {
     $('#bargeIn').checked = state.play.bargeIn;
     $('#voiceNote').textContent = on ? voiceNote() : '';
     if (on && !st) fillVoices();
+    if (st) renderStudioSteps();
     if (on && st && !studio.connecting) studioConnect();
   }
 
@@ -2574,7 +2613,7 @@ body.tab-print.has-deck #print-root {
   var AC = window.AudioContext || window.webkitAudioContext;
   var MIC_BLOCKED = 'The microphone is blocked. Allow it for this page in the browser\'s site settings, then press Mic.';
   var STUDIO_PHRASES = ['Right!', 'Right.', 'plus 100.', 'plus 200.', 'plus 300.', 'Not quite.', 'No.', 'Sorry, I did not catch that.'];
-  var studio = { ok: false, base: '', voices: [], connecting: null, audio: null, cache: new Map(), queue: [], inFlight: 0, stream: null, ctx: null, det: null };
+  var studio = { ok: false, served: null, busy: false, base: '', voices: [], connecting: null, audio: null, cache: new Map(), queue: [], inFlight: 0, stream: null, ctx: null, det: null };
 
   function defaultStudioUrl() { return /^https?:$/.test(location.protocol) ? location.origin + '/voicestudio' : 'http://127.0.0.1:3900'; }
   function studioBase() { return (state.play.studioUrl.trim() || defaultStudioUrl()).replace(/\/+$/, ''); }
@@ -2592,8 +2631,10 @@ body.tab-print.has-deck #print-root {
       return r.text().then(function (t) {
         var msg = '';
         try { var j = JSON.parse(t); msg = (j.error && j.error.message) || (typeof j.detail === 'string' ? j.detail : ''); } catch (e) { msg = ''; }
-        var err = new Error(msg || 'HTTP ' + r.status);
+        var err = new Error(msg || 'HTTP ' + r.status), code = '';
+        try { code = (JSON.parse(t).error || {}).code || ''; } catch (e) { code = ''; }
         err.status = r.status;
+        err.code = code;
         throw err;
       });
     });
@@ -2604,32 +2645,61 @@ body.tab-print.has-deck #print-root {
     el.textContent = text;
     el.className = 'hint' + (kind ? ' studio-' + kind : '');
   }
+  function viaLauncher(base) { return base === location.origin + '/voicestudio'; }
   function studioErrorText(e, base) {
-    if (e.status === 502 && e.message) return e.message;
-    if (e.status === 404 && base === location.origin + '/voicestudio') return 'This page was not opened through serve.py, so it cannot reach VoiceStudio. Run python3 serve.py and open the address it prints.';
-    if (e.status === 401) return 'VoiceStudio asked for a PIN or API key. Run VoiceStudio on this computer, where none is needed.';
-    if (e.status) return 'VoiceStudio answered with an error: ' + e.message;
-    return 'Could not reach VoiceStudio at ' + base + '. Check that VoiceStudio is open. If it is, the browser is blocking this page: start the app with python3 serve.py and open the address it prints.';
+    if (e.code === 'voicestudio_unreachable') return 'Waiting for VoiceStudio. Open it and leave it running; this page will notice when it is ready.';
+    if (e.status === 404 && viaLauncher(base)) return 'This page was not opened with Start Flashcards, so it cannot reach VoiceStudio. Close this tab and double-click Start Flashcards in the flashcards folder.';
+    if (e.status === 401) return 'VoiceStudio asked for a PIN or key. Use VoiceStudio on this same computer, where none is needed.';
+    if (e.status) return 'VoiceStudio is open but answered with a problem: ' + e.message + '. Try closing and reopening VoiceStudio.';
+    if (location.protocol === 'file:') return '';
+    return 'Could not reach VoiceStudio at ' + base + '. Check that VoiceStudio is open.';
   }
-  function studioConnect() {
+  // quiet: background re-checks do not flash "Checking" over the current message.
+  function studioConnect(quiet) {
     var base = studioBase();
     studio.ok = false;
     studio.base = base;
-    setStudioStatus('Connecting to ' + base + '…', '');
+    studio.busy = true;
+    if (!quiet) setStudioStatus('Checking for VoiceStudio\u2026', '');
     var p = studio.connecting = studioFetch('/health').then(function () { return studioFetch('/v1/audio/voices'); })
       .then(function (r) { return r.json(); })
       .then(function (j) {
         if (studio.connecting !== p) return;
+        studio.busy = false;
         studio.ok = true;
+        if (viaLauncher(base)) studio.served = true;
+        store.set('ftm:vsSeen', true);
         // OpenAI alias names all map to the engine default, so only the user's own voices are listed.
         studio.voices = (Array.isArray(j && j.voices) ? j.voices : []).filter(function (v) { return v && v.type === 'profile' && (v.id || v.voice_id); });
         fillStudioVoices();
-        setStudioStatus('Connected to VoiceStudio.' + (studio.voices.length ? ' ' + plural(studio.voices.length, 'voice') + ' of your own to choose from.' : ' Clone or design voices in VoiceStudio to pick them here.'), 'ok');
+        setStudioStatus('Connected to VoiceStudio. Voice mode is ready.' + (studio.voices.length ? ' ' + plural(studio.voices.length, 'voice') + ' of your own to choose from.' : ''), 'ok');
+        renderStudioSteps();
       }, function (e) {
         if (studio.connecting !== p) return;
-        setStudioStatus(studioErrorText(e, base), 'err');
+        studio.busy = false;
+        // serve.py answers with its own error when it is running but VoiceStudio is not.
+        if (viaLauncher(base)) studio.served = e.code === 'voicestudio_unreachable' || (!!e.status && e.status !== 404);
+        else if (location.protocol === 'file:') studio.served = false;
+        setStudioStatus(studioErrorText(e, base), e.code === 'voicestudio_unreachable' ? '' : 'err');
+        renderStudioSteps();
       });
     return p;
+  }
+  // Marks setup steps done, highlights the next one, and shows the voice choices once connected.
+  function renderStudioSteps() {
+    var custom = !!state.play.studioUrl.trim(), current = false;
+    [
+      ['#stepServe', studio.ok || studio.served === true || (custom && location.protocol !== 'file:')],
+      ['#stepInstall', studio.ok || !!store.get('ftm:vsSeen', false)],
+      ['#stepRun', studio.ok]
+    ].forEach(function (st) {
+      var li = $(st[0]);
+      li.classList.toggle('done', st[1]);
+      li.classList.toggle('now', !st[1] && !current);
+      if (!st[1]) current = true;
+    });
+    $('#fileWarn').hidden = location.protocol !== 'file:';
+    $('#studioReady').hidden = !studio.ok;
   }
   function fillStudioVoices() {
     var sel = $('#studioVoice'), want = state.play.studioVoice;
@@ -2852,14 +2922,25 @@ body.tab-print.has-deck #print-root {
       showHeard('Heard: “' + t + '”');
       voice.want = false;
       handleSpoken([t]);
-    }, function () {
+    }, function (e) {
       voice.transcribing = false;
       if (game !== g || g.over) return;
+      if (e && (e.status === 400 || /model/.test(e.code || ''))) { noDictationModel(); return; }
       g.sttFails = (g.sttFails || 0) + 1;
       if (g.sttFails >= 2) studioDown('stt');
       else if (voice.want) { showHeard('That did not come through. Please say it again.'); wantListen(); }
       voiceUi();
     });
+  }
+  // VoiceStudio can read aloud before a speech recognition model has been downloaded.
+  function noDictationModel() {
+    var g = game;
+    g.sttDown = true;
+    g.studioNoticed = true;
+    showHeard('VoiceStudio is reading aloud, but cannot understand speech yet. In VoiceStudio, open Transcriptions and download the recommended model (or go to Settings > Models > Dictation).' +
+      (SR ? ' Until then, the browser listens instead.' : ' Until then, click or type your answers.'));
+    if (voice.want) wantListen();
+    voiceUi();
   }
   // When VoiceStudio stops responding mid-game, carry on with the browser's speech.
   function studioDown(kind) {
@@ -3341,6 +3422,11 @@ body.tab-print.has-deck #print-root {
     $('#voiceEngine').addEventListener('change', function () { state.play.voiceEngine = this.value; savePlay(); renderVoiceSetup(); });
     $('#studioUrl').addEventListener('change', function () { state.play.studioUrl = this.value.trim(); savePlay(); studioConnect(); });
     $('#studioConnect').addEventListener('click', function () { studioConnect(); });
+    // While the setup screen waits for VoiceStudio, check again every 5 seconds.
+    setInterval(function () {
+      if (state.tab === 'play' && state.play.voice && studioWanted() && !studio.ok && !studio.busy && !game &&
+        !document.hidden && location.protocol !== 'file:') studioConnect(true);
+    }, 5000);
     $('#studioVoice').addEventListener('change', function () { state.play.studioVoice = this.value; savePlay(); });
     $('#studioSpeed').addEventListener('change', function () { state.play.studioSpeed = this.value; savePlay(); });
     $('#bargeIn').addEventListener('change', function () { state.play.bargeIn = this.checked; savePlay(); });
