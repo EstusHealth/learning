@@ -31,4 +31,15 @@ with no build step, no backend and no external libraries.
    cards you missed, with a button to practise just those. Best scores are
    kept per deck and challenge.
 
+   Voice mode (tick it on the Play tab) reads each question and its options
+   aloud and lets you answer by speaking: say the option number ("two",
+   "option 3") or the answer itself. Say "repeat" to hear it again, "skip"
+   to pass, "next" to move on, or "I was right" to overrule a Type it mark.
+   It is hands-free: after the feedback is read out, the next card starts on
+   its own. Beat the clock pauses its timer while a question is being read.
+   Match up is read out but played by clicking. Reading aloud works in all
+   modern browsers. Listening needs Chrome, Edge or Safari and an internet
+   connection, because the browser sends the audio to its speech service.
+   The browser asks for microphone access the first time.
+
 The last deck, settings and best scores are kept in the browser's local storage.

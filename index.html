@@ -326,7 +326,16 @@ details ul { margin: 8px 0 0; padding-left: 20px; font-size: .92rem; }
 .m-tile.sel { border-color: var(--accent); background: var(--accent-soft); box-shadow: inset 0 0 0 2px var(--accent); }
 .m-tile.wrong { animation: g-shake .3s; }
 @keyframes g-shake { 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
-@media (prefers-reduced-motion: reduce) { .m-tile.wrong { animation: none; } .g-bar span { transition: none; } }
+.voice-chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 999px;
+  background: var(--surface-2); color: var(--muted); font-size: .8rem; font-weight: 700;
+}
+.voice-chip::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; opacity: .5; }
+.voice-chip.live { background: var(--danger-soft); color: var(--danger); }
+.voice-chip.live::before { opacity: 1; animation: g-pulse 1.2s infinite; }
+@keyframes g-pulse { 50% { opacity: .2; } }
+.g-heard { color: var(--muted); font-size: .9rem; font-style: italic; margin: 10px 0 0; min-height: 1.4em; }
+@media (prefers-reduced-motion: reduce) { .m-tile.wrong { animation: none; } .g-bar span { transition: none; } .voice-chip.live::before { animation: none; } }
 .g-results:focus { outline: none; }
 .big-score { font-size: 2.6rem; font-weight: 800; color: var(--accent); line-height: 1.1; font-variant-numeric: tabular-nums; }
 .stat-grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); margin: 16px 0; }
@@ -680,6 +689,14 @@ body.tab-print.has-deck #print-root {
           <div id="playLenWrap"><label for="playLen" id="playLenLbl">Cards per game</label><select id="playLen"></select></div>
         </div>
         <label class="check" style="margin-top:14px"><input type="checkbox" id="playTicked"><span><strong>Ticked cards only</strong><span>Leave out cards you unticked on the Cards tab.</span></span></label>
+        <label class="check" style="margin-top:10px"><input type="checkbox" id="playVoice"><span><strong>Voice mode</strong><span>Hear each question read aloud and answer by speaking.</span></span></label>
+        <div id="voiceOpts" hidden>
+          <div class="btn-row" style="align-items:flex-end;margin-top:4px">
+            <div style="flex:1;min-width:200px"><label for="playVoiceName" style="margin-top:0">Voice</label><select id="playVoiceName"></select></div>
+            <button class="btn" type="button" id="voiceTest">Test voice</button>
+          </div>
+        </div>
+        <p class="hint" id="voiceNote"></p>
         <p class="count-line" id="playPool"></p>
         <p class="field-error" id="playProblem" hidden></p>
         <div class="btn-row"><button id="playStart" class="btn primary" type="button">Start</button></div>
@@ -1375,7 +1392,7 @@ body.tab-print.has-deck #print-root {
     dirty: false,
     filters: { topic: '', type: '', diff: '', q: '' },
     print: { mode: 'duplex', layout: '2x4', order: 'deck' },
-    play: { mode: 'quiz', topic: '', diff: '', ticked: true, length: '10', time: '60' },
+    play: { mode: 'quiz', topic: '', diff: '', ticked: true, length: '10', time: '60', voice: false, voiceName: '' },
     printDirty: true,
     pending: null,
     tab: 'prompt'
@@ -2041,6 +2058,7 @@ body.tab-print.has-deck #print-root {
     $('#playTopic').value = p.topic;
     $('#playDiff').value = p.diff;
     $('#playTicked').checked = p.ticked;
+    renderVoiceSetup();
     updatePlayInfo();
   }
 
@@ -2130,8 +2148,10 @@ body.tab-print.has-deck #print-root {
     var g = {
       mode: mode, practice: !!opts.practice, variant: playVariant(mode), pool: list.slice(), queue: list, i: 0,
       score: 0, streak: 0, prevStreak: 0, bestStreak: 0, right: 0, wrong: 0, lives: LIVES, penalty: 0,
-      missed: [], missedIds: new Set(), acc: 0, t0: Date.now(), holds: new Set(), pending: [], over: false
+      missed: [], missedIds: new Set(), acc: 0, t0: Date.now(), holds: new Set(), pending: [], over: false,
+      voice: !!state.play.voice && !!(TTS || SR)
     };
+    voice.blocked = '';
     if (mode === 'clock') g.limit = +state.play.time * 1000;
     if (mode === 'match') {
       g.boards = [];
@@ -2153,6 +2173,7 @@ body.tab-print.has-deck #print-root {
 
   function stopGame() {
     if (!game) return;
+    hush();
     clearInterval(game.tick);
     game.pending.forEach(clearTimeout);
     game.over = true;
@@ -2176,6 +2197,7 @@ body.tab-print.has-deck #print-root {
     else { g.choices = choicesFor(g.card); renderQuestion(); }
   }
   function advance() { game.i++; nextTurn(); }
+  function nextAction() { if (game.mode === 'survival' && game.lives <= 0) endGame('lives'); else advance(); }
 
   function scoreAnswer(ok, card) {
     var g = game;
@@ -2215,6 +2237,7 @@ body.tab-print.has-deck #print-root {
     }
     items.push('<span>Score <b>' + fmtNum(g.score) + '</b></span>');
     if (g.streak >= 2) items.push('<span class="chip">Streak ' + g.streak + (comboMult(g.streak) > 1 ? ', x' + comboMult(g.streak) + ' points' : '') + '</span>');
+    if (g.voice) items.push(voiceHudHtml());
     items.push('<span class="spacer"></span><button class="btn small ghost" type="button" data-g="quit">Quit</button>');
     return '<div class="hud">' + items.join('') + '</div><div class="g-bar" aria-hidden="true"><span id="hudBar" style="width:' + clamp(pct * 100, 0, 100).toFixed(1) + '%"></span></div>';
   }
@@ -2235,11 +2258,16 @@ body.tab-print.has-deck #print-root {
     if (g.mode !== 'survival') return '';
     return g.lives ? '. ' + plural(g.lives, 'life', 'lives') + ' left.' : '. No lives left.';
   }
-  function showFeedback(ok, head, body, extra) {
+  function showFeedback(ok, head, body, extra, waitForWord) {
     var g = game, clock = g.mode === 'clock';
     $('#gFeedback').innerHTML = '<div class="msg ' + (ok ? 'ok' : 'err') + ' g-feedback"><h3>' + esc(head) + '</h3>' + (body ? '<p>' + body + '</p>' : '') +
       (clock ? '' : '<div class="btn-row"><button class="btn primary" type="button" id="gNext" data-g="next">' + nextLabel() + '</button>' + (extra || '') + '</div>') + '</div>';
     updateHud();
+    if (g.voice) {
+      voiceFeedback(ok, head, body, waitForWord);
+      if (!clock) $('#gNext').focus();
+      return;
+    }
     if (clock) {
       hold('feedback');
       later(ok ? 500 : 1500, function () { release('feedback'); advance(); });
@@ -2269,8 +2297,9 @@ body.tab-print.has-deck #print-root {
     }).join('');
     stage(crumbHtml(c) + '<div class="g-prompt" tabindex="-1">' + faceHtml(c).front + '</div>' +
       '<p class="g-ask">' + ASK[c.type] + ' <span class="g-keys">Keys 1 to ' + n + ' work too.</span></p>' +
-      '<div class="g-opts">' + opts + '</div><div id="gFeedback" aria-live="polite"></div>');
+      '<div class="g-opts">' + opts + '</div>' + (g.voice ? '<p class="g-heard" id="gHeard"></p>' : '') + '<div id="gFeedback" aria-live="polite"></div>');
     $('#playStage .g-prompt').focus();
+    if (g.voice) readTurn();
   }
 
   function answerChoice(i) {
@@ -2295,8 +2324,10 @@ body.tab-print.has-deck #print-root {
     }).join('');
     stage(crumbHtml(g.card) + '<div class="g-prompt" tabindex="-1">' + t.prompt + '</div><p class="g-ask">' + esc(t.ask) + '</p>' +
       '<form id="gTypeForm" novalidate autocomplete="off">' + inputs + '<div class="btn-row"><button class="btn primary" type="submit" id="gCheck">Check</button>' +
-      '<button class="btn ghost" type="button" id="gSkip" data-g="skip">I don\'t know</button></div></form><div id="gFeedback" aria-live="polite"></div>');
+      '<button class="btn ghost" type="button" id="gSkip" data-g="skip">I don\'t know</button></div></form>' +
+      (g.voice ? '<p class="g-heard" id="gHeard"></p>' : '') + '<div id="gFeedback" aria-live="polite"></div>');
     $('#gIn0').focus();
+    if (g.voice) readTurn();
   }
 
   function checkTypeQ() {
@@ -2319,7 +2350,7 @@ body.tab-print.has-deck #print-root {
     $('#gCheck').disabled = true; $('#gSkip').disabled = true;
     showFeedback(ok, ok ? (exact ? 'Right! +' : 'Close enough. +') + gain : res ? 'Not quite' : 'Here is the answer',
       '<strong>Answer:</strong> ' + typedAnswerHtml(g.card),
-      res && !ok ? '<button class="btn" type="button" data-g="override">I was right</button>' : '');
+      res && !ok ? '<button class="btn" type="button" data-g="override">I was right</button>' : '', !!res && !ok);
   }
 
   function overrideTyped() {
@@ -2347,6 +2378,7 @@ body.tab-print.has-deck #print-root {
       '<div class="match-col" role="group" aria-label="Cards">' + shuffle(board).map(function (c) { return tile(c, 'l'); }).join('') + '</div>' +
       '<div class="match-col" role="group" aria-label="Answers">' + shuffle(board).map(function (c) { return tile(c, 'r'); }).join('') + '</div>' +
       '</div><div id="gFeedback" aria-live="polite" class="hint"></div>');
+    if (g.voice && g.b === 0) say(MATCH_INTRO);
   }
 
   function matchPick(btn) {
@@ -2385,11 +2417,301 @@ body.tab-print.has-deck #print-root {
     updateHud();
   }
 
+
+  /* ---- Voice mode (Web Speech API): read questions aloud, answer by speaking ---- */
+  var SR = window.SpeechRecognition || window.webkitSpeechRecognition || null;
+  var TTS = window.speechSynthesis && window.SpeechSynthesisUtterance ? window.speechSynthesis : null;
+  var voice = { rec: null, active: false, want: false, speaking: false, micOff: false, blocked: '', token: 0 };
+  var NUM_WORDS = { one: 1, won: 1, first: 1, two: 2, to: 2, too: 2, second: 2, three: 3, tree: 3, third: 3, four: 4, for: 4, fore: 4, fourth: 4, forth: 4 };
+  var FILLERS = ['option', 'number', 'answer', 'choice', 'is', 'it', 'its', 'i', 'think', 'say', 'pick', 'please', 'go', 'with', 'ill', 'take', 'um', 'uh', 'erm'];
+  var COMMANDS = [
+    ['repeat', /^(repeat|repeat (that|it|question)|say (that|it) again|again|pardon|what)$/],
+    ['skip', /^(skip|skip it|pass|i don t know|don t know|i do not know|no idea|i give up|give up)$/],
+    ['next', /^(next|next one|next question|continue|go on|carry on|okay|ok)$/],
+    ['override', /^(i was right|i was correct|that was right|that s right|count it)$/]
+  ];
+  var MATCH_INTRO = 'Match up. Pick a card on the left, then its answer on the right.';
+
+  // Card HTML to plain speakable text. Blanks are read as "blank".
+  function speechText(html) {
+    var t = document.createElement('template');
+    t.innerHTML = String(html || '').replace(/<br>/g, '. ').replace(/<span class="g-blank">(\d+)<\/span>/g, ' blank $1 ');
+    return t.content.textContent.replace(/_{3,}/g, ' blank ').replace(/\+(\d)/g, 'plus $1').replace(/\s+/g, ' ')
+      .replace(/\s+([.!?])/g, '$1').replace(/([.!?:])\.+/g, '$1').trim();
+  }
+  // Joins phrases into sentences without doubling punctuation.
+  function sentences(parts) {
+    return parts.map(function (x) { return String(x || '').trim(); }).filter(Boolean)
+      .map(function (x) { return /[.!?:]$/.test(x) ? x : x + '.'; }).join(' ');
+  }
+  function parseCommand(alts) {
+    for (var i = 0; i < alts.length; i++) {
+      var n = normAns(alts[i]);
+      for (var k = 0; k < COMMANDS.length; k++) if (COMMANDS[k][1].test(n)) return COMMANDS[k][0];
+    }
+    return '';
+  }
+  // "two", "option 3", "the third one" and similar. Returns 0 when it is not just a number.
+  function spokenNumber(t) {
+    var core = normAns(t).split(' ').filter(function (w) { return w && FILLERS.indexOf(w) < 0; });
+    if (core.length === 2 && core[1] === 'one') core = [core[0]];
+    if (core.length !== 1) return 0;
+    if (/^\d$/.test(core[0])) return +core[0];
+    return Object.prototype.hasOwnProperty.call(NUM_WORDS, core[0]) ? NUM_WORDS[core[0]] : 0;
+  }
+  function sigWords(s) { return normAns(s).split(' ').filter(function (w) { return w.length > 2 || /\d/.test(w); }); }
+  function optionScore(said, option) {
+    if (checkTyped(said, option).ok) return 2;
+    var sw = sigWords(said), ow = sigWords(option);
+    if (!sw.length || !ow.length) return 0;
+    function has(list, w) { return list.some(function (x) { return x === w || (w.length > 4 && editDistance(w, x) <= 1); }); }
+    var hits = sw.filter(function (w) { return has(ow, w); }).length;
+    var cov = ow.filter(function (w) { return has(sw, w); }).length;
+    return hits / sw.length * 0.6 + cov / ow.length * 0.4;
+  }
+  // Index of the option the player said, by number or by its words, or -1 when unclear.
+  function pickOption(alts, options) {
+    for (var i = 0; i < alts.length; i++) {
+      var n = spokenNumber(alts[i]);
+      if (n >= 1 && n <= options.length) return n - 1;
+    }
+    var scores = options.map(function (o) {
+      return Math.max.apply(null, alts.map(function (a) { return optionScore(a, o); }));
+    });
+    var order = scores.map(function (sc, i) { return i; }).sort(function (a, b) { return scores[b] - scores[a]; });
+    var top = scores[order[0]], second = order.length > 1 ? scores[order[1]] : 0;
+    return top >= 0.5 && top - second >= 0.2 ? order[0] : -1;
+  }
+  // Checks a spoken reply against the answers for Type it. Several blanks must all be heard.
+  function matchSpoken(alts, answers) {
+    for (var k = 0; k < alts.length; k++) {
+      var said = alts[k], padded = ' ' + normAns(said) + ' ';
+      var res = answers.map(function (a) {
+        if (answers.length === 1) { var r = checkTyped(said, a); if (r.ok) return r; }
+        var hit = answerForms(a).some(function (f) { return padded.indexOf(' ' + f + ' ') >= 0; });
+        return { ok: hit, exact: hit };
+      });
+      if (res.every(function (r) { return r.ok; })) return { res: res, said: said };
+    }
+    return { res: answers.map(function () { return { ok: false, exact: false }; }), said: alts[0] || '' };
+  }
+
+  function voiceList() { return TTS ? TTS.getVoices() : []; }
+  function pickVoice() {
+    var vs = voiceList(), want = state.play.voiceName, lang = (navigator.language || 'en').slice(0, 2).toLowerCase();
+    function inLang(v) { return (v.lang || '').toLowerCase().indexOf(lang) === 0; }
+    return vs.find(function (v) { return v.voiceURI === want; }) || vs.find(function (v) { return inLang(v) && v.default; }) || vs.find(inLang) || null;
+  }
+  function voiceLang() { var v = pickVoice(); return (v && v.lang) || navigator.language || 'en-US'; }
+  function fillVoices() {
+    var sel = $('#playVoiceName');
+    if (!sel || !TTS) return;
+    var lang = (navigator.language || 'en').slice(0, 2).toLowerCase();
+    var vs = voiceList().slice().sort(function (a, b) {
+      return ((b.lang || '').toLowerCase().indexOf(lang) === 0) - ((a.lang || '').toLowerCase().indexOf(lang) === 0);
+    });
+    sel.innerHTML = '<option value="">Automatic</option>' + vs.map(function (v) {
+      return '<option value="' + esc(v.voiceURI) + '">' + esc(v.name + ' (' + v.lang + ')') + '</option>';
+    }).join('');
+    sel.value = state.play.voiceName;
+    if (sel.value !== state.play.voiceName) sel.value = '';
+  }
+  function voiceNote() {
+    if (!TTS && !SR) return 'This browser has no speech support, so voice mode is not available.';
+    var s = [];
+    if (!TTS) s.push('This browser cannot read aloud, but it can listen.');
+    if (!SR) s.push('This browser can read cards aloud but cannot listen. Use Chrome, Edge or Safari to answer by voice.');
+    else s.push('Say the option number or the answer. Say "repeat" to hear it again or "skip" to pass. Listening uses your browser\'s speech service, which needs internet.');
+    s.push('Match up is read out but played by clicking.');
+    return s.join(' ');
+  }
+  function renderVoiceSetup() {
+    var supported = !!(TTS || SR), on = supported && state.play.voice;
+    $('#playVoice').checked = on;
+    $('#playVoice').disabled = !supported;
+    $('#voiceOpts').hidden = !on || !TTS;
+    $('#voiceNote').textContent = on || !supported ? voiceNote() : '';
+    if (on) fillVoices();
+  }
+
+  // Never listens while speaking, so the microphone does not hear the question.
+  function say(text, done) {
+    var tok = ++voice.token, finished = false;
+    stopListen();
+    if (TTS) TTS.cancel();
+    text = String(text || '').trim();
+    function fin() {
+      if (finished || tok !== voice.token) return;
+      finished = true;
+      if (voice.speaking) { voice.speaking = false; release('speech'); }
+      voiceUi();
+      if (done) done();
+    }
+    if (!TTS || !text) { fin(); return; }
+    // Chrome can stop long utterances early, so speak sentence sized chunks.
+    var parts = text.match(/[^.!?]+[.!?]*\s*/g) || [text], list = [], cur = '';
+    parts.forEach(function (p) { if (cur && (cur + p).length > 180) { list.push(cur); cur = ''; } cur += p; });
+    if (cur.trim()) list.push(cur);
+    var v = pickVoice();
+    hold('speech'); voice.speaking = true; voiceUi();
+    list.forEach(function (part, i) {
+      var u = new SpeechSynthesisUtterance(part);
+      if (v) u.voice = v;
+      u.lang = (v && v.lang) || voiceLang();
+      u.onerror = fin;
+      if (i === list.length - 1) u.onend = fin;
+      TTS.speak(u);
+    });
+    setTimeout(fin, 3000 + text.length * 100); // in case the browser never reports the end
+  }
+  function hush() {
+    voice.token++;
+    stopListen();
+    if (TTS) TTS.cancel();
+    if (voice.speaking) { voice.speaking = false; release('speech'); }
+    voiceUi();
+  }
+
+  function wantListen() {
+    var g = game;
+    if (!SR || !g || !g.voice || g.over || voice.micOff || voice.blocked || state.tab !== 'play' || document.hidden) { voiceUi(); return; }
+    voice.want = true;
+    if (!voice.active) startRec();
+    voiceUi();
+  }
+  function stopListen() {
+    voice.want = false;
+    if (voice.active && voice.rec) { try { voice.rec.abort(); } catch (e) { /* already stopped */ } }
+  }
+  function startRec() {
+    if (!voice.rec) {
+      voice.rec = new SR();
+      voice.rec.continuous = false;
+      voice.rec.interimResults = true;
+      voice.rec.maxAlternatives = 5;
+      voice.rec.onresult = onRecResult;
+      voice.rec.onerror = onRecError;
+      voice.rec.onend = onRecEnd;
+    }
+    voice.rec.lang = voiceLang();
+    try { voice.rec.start(); voice.active = true; } catch (e) { voice.active = false; }
+  }
+  function onRecEnd() {
+    voice.active = false;
+    // Recognition stops after a pause; keep listening while a question is waiting.
+    if (voice.want) setTimeout(function () { if (voice.want && !voice.active) wantListen(); }, 250);
+    voiceUi();
+  }
+  function onRecError(e) {
+    var blocked = 'The microphone is blocked. Allow it for this page in the browser\'s site settings, then press Mic.';
+    var msg = { 'not-allowed': blocked, 'service-not-allowed': blocked,
+      'audio-capture': 'No microphone was found. You can still click or type.',
+      network: 'Listening needs an internet connection. You can still click or type.' }[e.error];
+    if (!msg) return;
+    voice.blocked = msg; voice.want = false;
+    showHeard(msg);
+    voiceUi();
+  }
+  function onRecResult(e) {
+    var g = game;
+    if (!g || g.over || !voice.want) return;
+    var res = e.results[e.resultIndex] || e.results[e.results.length - 1], alts = [];
+    for (var i = 0; i < res.length; i++) if (res[i].transcript && res[i].transcript.trim()) alts.push(res[i].transcript.trim());
+    if (!alts.length) return;
+    showHeard('Heard: “' + alts[0] + '”' + (res.isFinal ? '' : '…'));
+    if (!res.isFinal) return;
+    voice.want = false;
+    handleSpoken(alts);
+  }
+  function showHeard(text) { var h = $('#gHeard'); if (h) h.textContent = text; }
+
+  function handleSpoken(alts) {
+    var g = game;
+    if (!g || g.over || !g.voice) return;
+    alts = alts.filter(function (a) { return normAns(a); });
+    if (!alts.length) { wantListen(); return; }
+    var cmd = parseCommand(alts);
+    if (cmd === 'repeat') { readTurn(); return; }
+    if (g.answered) {
+      if (cmd === 'next') nextAction();
+      else if (cmd === 'override' && g.mode === 'typeit') overrideTyped();
+      else wantListen();
+      return;
+    }
+    if (cmd === 'skip') { if (g.mode === 'typeit') finishTyped(null); else answerChoice(-1); return; }
+    if (cmd) { wantListen(); return; }
+    if (g.mode === 'typeit') {
+      var m = matchSpoken(alts, g.task.answers), ins = $$('#playStage .g-in');
+      ins.forEach(function (x, i) { x.value = m.res[i].ok ? (ins.length === 1 ? m.said : g.task.answers[i]) : (i === 0 ? m.said : ''); });
+      finishTyped(m.res);
+      return;
+    }
+    var pick = pickOption(alts, g.choices.options);
+    if (pick >= 0) answerChoice(pick);
+    else say('Sorry, I did not catch that. Say a number from 1 to ' + g.choices.options.length + '.', wantListen);
+  }
+
+  // Reads the current question (or the last feedback, once answered), then listens.
+  function readTurn() {
+    var g = game;
+    if (!g || g.over || !g.voice) return;
+    if (g.mode === 'match') { say(MATCH_INTRO); return; }
+    if (g.answered) { if (g.fbSpeech) say(g.fbSpeech.text, g.fbSpeech.done); return; }
+    var text;
+    if (g.mode === 'typeit') text = sentences([speechText(g.task.prompt), g.task.ask]);
+    else text = sentences([speechText(faceHtml(g.card).front)].concat(g.choices.options.map(function (o, i) {
+      return 'Option ' + (i + 1) + ': ' + o;
+    })));
+    say(text, wantListen);
+  }
+  function voiceFeedback(ok, head, body, waitForWord) {
+    var g = game, at = g.i, text, done;
+    if (g.mode === 'clock') {
+      text = ok ? 'Right.' : sentences(['No', speechText(body)]);
+      hold('feedback');
+      done = function () { release('feedback'); advance(); };
+    } else {
+      text = sentences([speechText(head), speechText(body)]);
+      if (waitForWord) { text += ' Say "I was right" to count it, or "next" to go on.'; done = wantListen; }
+      else done = function () { later(800, function () { if (game.i === at && game.answered) nextAction(); }); };
+    }
+    g.fbSpeech = { text: text, done: done };
+    say(text, done);
+  }
+  function voiceState() {
+    if (voice.speaking) return 'Speaking';
+    if (voice.active && voice.want) return 'Listening';
+    if (!SR || voice.micOff || voice.blocked) return 'Mic off';
+    return 'Voice on';
+  }
+  function voiceHudHtml() {
+    var st = voiceState();
+    return '<span class="voice-chip' + (st === 'Listening' ? ' live' : '') + '" id="gVoice">' + st + '</span>' +
+      (game.mode === 'match' ? '' : '<button class="btn small ghost" type="button" data-g="repeat" title="Read it again (R)">Repeat</button>' +
+        (SR ? '<button class="btn small ghost" type="button" data-g="mic" id="gMic">' + (voice.micOff || voice.blocked ? 'Mic: off' : 'Mic: on') + '</button>' : ''));
+  }
+  function voiceUi() {
+    var el = $('#gVoice'), mb = $('#gMic');
+    if (el) { var st = voiceState(); el.textContent = st; el.classList.toggle('live', st === 'Listening'); }
+    if (mb) mb.textContent = voice.micOff || voice.blocked ? 'Mic: off' : 'Mic: on';
+  }
+  function toggleMic() {
+    var g = game;
+    if (voice.micOff || voice.blocked) {
+      voice.micOff = false; voice.blocked = ''; showHeard('');
+      if (g && !g.answered && !voice.speaking) wantListen();
+    } else { voice.micOff = true; stopListen(); }
+    voiceUi();
+  }
+  function voicePause() { if (game && game.voice) hush(); }
+  function voiceResume() { if (game && game.voice && !game.over && game.mode !== 'match') readTurn(); }
+
   /* ---- Results ---- */
   function endGame(reason) {
     var g = game;
     if (!g || g.over) return;
     g.time = elapsed();
+    if (g.voice) hush();
     g.acc = g.time; g.over = true; g.reason = reason;
     clearInterval(g.tick);
     g.pending.forEach(clearTimeout); g.pending = [];
@@ -2435,6 +2757,7 @@ body.tab-print.has-deck #print-root {
       (g.missed.length ? '<button class="btn" type="button" data-g="practice">Practise the ' + plural(g.missed.length, 'missed card') + '</button>' : '') +
       '<button class="btn ghost" type="button" data-g="setup">Change challenge</button></div></div></div>';
     $('#playStage .g-results').focus();
+    if (g.voice) say(sentences([title, sub, fmtNum(g.score) + ' points', total && m !== 'match' ? g.right + ' of ' + total + ' right' : '', g.newBest ? 'A new best!' : '']));
   }
 
   function onStageClick(e) {
@@ -2443,7 +2766,9 @@ body.tab-print.has-deck #print-root {
     if (!el || !g) return;
     var act = el.dataset.g;
     if (act === 'opt') answerChoice(+el.dataset.i);
-    else if (act === 'next') { if (g.mode === 'survival' && g.lives <= 0) endGame('lives'); else advance(); }
+    else if (act === 'next') nextAction();
+    else if (act === 'repeat') readTurn();
+    else if (act === 'mic') toggleMic();
     else if (act === 'm') matchPick(el);
     else if (act === 'skip') finishTyped(null);
     else if (act === 'override') overrideTyped();
@@ -2454,6 +2779,7 @@ body.tab-print.has-deck #print-root {
 
   /* ================= Tabs, theme, restore ================= */
   function showTab(name) {
+    var prev = state.tab;
     state.tab = name;
     $$('.steps [role="tab"]').forEach(function (b) {
       var on = b.dataset.tab === name;
@@ -2463,8 +2789,8 @@ body.tab-print.has-deck #print-root {
     $$('main > section').forEach(function (s) { s.hidden = s.id !== 'tab-' + name; });
     document.body.className = document.body.className.replace(/\btab-\S+/g, '').trim() + ' tab-' + name;
     if (name === 'print') ensurePrint();
-    if (name !== 'play') hold('tab');
-    else { release('tab'); if (!game) updatePlayInfo(); }
+    if (name !== 'play') { hold('tab'); if (prev === 'play') voicePause(); }
+    else { release('tab'); if (!game) updatePlayInfo(); else if (prev !== 'play') voiceResume(); }
     store.set('ftm:tab', name);
     window.scrollTo(0, 0);
   }
@@ -2640,7 +2966,13 @@ body.tab-print.has-deck #print-root {
       if (typeof pl.ticked === 'boolean') state.play.ticked = pl.ticked;
       if (['10', '20', 'all'].indexOf(pl.length) >= 0) state.play.length = pl.length;
       if (['60', '90', '120'].indexOf(pl.time) >= 0) state.play.time = pl.time;
+      if (typeof pl.voice === 'boolean') state.play.voice = pl.voice;
+      if (typeof pl.voiceName === 'string') state.play.voiceName = pl.voiceName;
     }
+    $('#playVoice').addEventListener('change', function () { state.play.voice = this.checked; savePlay(); renderVoiceSetup(); });
+    $('#playVoiceName').addEventListener('change', function () { state.play.voiceName = this.value; savePlay(); });
+    $('#voiceTest').addEventListener('click', function () { say('Voice mode is ready. Say the option number or the answer.'); });
+    if (TTS) TTS.onvoiceschanged = function () { if (state.play.voice) fillVoices(); };
     $('#modeGrid').addEventListener('change', function (e) {
       if (e.target.name !== 'gmode') return;
       state.play.mode = e.target.value; savePlay(); updatePlayInfo();
@@ -2657,12 +2989,16 @@ body.tab-print.has-deck #print-root {
     $('#playStage').addEventListener('submit', function (e) { e.preventDefault(); checkTypeQ(); });
     document.addEventListener('keydown', function (e) {
       var g = game;
-      if (!g || g.over || g.answered || state.tab !== 'play' || e.altKey || e.ctrlKey || e.metaKey) return;
-      if (g.mode === 'match' || g.mode === 'typeit' || !/^[1-9]$/.test(e.key)) return;
+      if (!g || g.over || state.tab !== 'play' || e.altKey || e.ctrlKey || e.metaKey) return;
       if (e.target.closest && e.target.closest('input, textarea, select')) return;
+      if (g.voice && g.mode !== 'match' && (e.key === 'r' || e.key === 'R')) { e.preventDefault(); readTurn(); return; }
+      if (g.answered || g.mode === 'match' || g.mode === 'typeit' || !/^[1-9]$/.test(e.key)) return;
       if (+e.key <= g.choices.options.length) { e.preventDefault(); answerChoice(+e.key - 1); }
     });
-    document.addEventListener('visibilitychange', function () { if (document.hidden) hold('hidden'); else release('hidden'); });
+    document.addEventListener('visibilitychange', function () {
+      if (document.hidden) { hold('hidden'); voicePause(); }
+      else { release('hidden'); if (state.tab === 'play') voiceResume(); }
+    });
 
     // Restore saved deck
     var saved = store.get('ftm:deck', null);
@@ -2682,7 +3018,8 @@ body.tab-print.has-deck #print-root {
   }
 
   // Exposed for testing in the browser console.
-  window.FTM = { parseInput: parseInput, validateDeck: validateDeck, buildPrompt: buildPrompt, computeStudyOrder: computeStudyOrder, state: state, buildPrint: buildPrint, checkTyped: checkTyped, startGame: startGame };
+  window.FTM = { parseInput: parseInput, validateDeck: validateDeck, buildPrompt: buildPrompt, computeStudyOrder: computeStudyOrder, state: state, buildPrint: buildPrint, checkTyped: checkTyped, startGame: startGame,
+    pickOption: pickOption, parseCommand: parseCommand, matchSpoken: matchSpoken, speechText: speechText };
 
   init();
 })();
