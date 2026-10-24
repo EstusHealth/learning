@@ -334,6 +334,8 @@ details ul { margin: 8px 0 0; padding-left: 20px; font-size: .92rem; }
 .voice-chip.live { background: var(--danger-soft); color: var(--danger); }
 .voice-chip.live::before { opacity: 1; animation: g-pulse 1.2s infinite; }
 @keyframes g-pulse { 50% { opacity: .2; } }
+.studio-ok { color: var(--ok); font-weight: 600; }
+.studio-err { color: var(--danger); font-weight: 600; }
 .g-heard { color: var(--muted); font-size: .9rem; font-style: italic; margin: 10px 0 0; min-height: 1.4em; }
 @media (prefers-reduced-motion: reduce) { .m-tile.wrong { animation: none; } .g-bar span { transition: none; } .voice-chip.live::before { animation: none; } }
 .g-results:focus { outline: none; }
@@ -691,10 +693,27 @@ body.tab-print.has-deck #print-root {
         <label class="check" style="margin-top:14px"><input type="checkbox" id="playTicked"><span><strong>Ticked cards only</strong><span>Leave out cards you unticked on the Cards tab.</span></span></label>
         <label class="check" style="margin-top:10px"><input type="checkbox" id="playVoice"><span><strong>Voice mode</strong><span>Hear each question read aloud and answer by speaking.</span></span></label>
         <div id="voiceOpts" hidden>
-          <div class="btn-row" style="align-items:flex-end;margin-top:4px">
-            <div style="flex:1;min-width:200px"><label for="playVoiceName" style="margin-top:0">Voice</label><select id="playVoiceName"></select></div>
-            <button class="btn" type="button" id="voiceTest">Test voice</button>
+          <div class="filters" style="margin-top:8px">
+            <div><label for="voiceEngine">Voice engine</label><select id="voiceEngine">
+              <option value="browser">Browser voices</option><option value="studio">VoiceStudio (natural, on this computer)</option>
+            </select></div>
+            <div id="browserVoiceWrap"><label for="playVoiceName">Voice</label><select id="playVoiceName"></select></div>
           </div>
+          <div id="studioOpts" hidden>
+            <div class="btn-row" style="align-items:flex-end;margin-top:10px">
+              <div style="flex:1;min-width:220px"><label for="studioUrl" style="margin-top:0">VoiceStudio address</label><input id="studioUrl" type="text" spellcheck="false" autocomplete="off"></div>
+              <button class="btn" type="button" id="studioConnect">Connect</button>
+            </div>
+            <p class="hint" id="studioStatus" role="status"></p>
+            <div class="filters" style="margin-top:8px">
+              <div><label for="studioVoice">VoiceStudio voice</label><select id="studioVoice"><option value="">Default</option></select></div>
+              <div><label for="studioSpeed">Speed</label><select id="studioSpeed">
+                <option value="0.85">Slower</option><option value="1">Normal</option><option value="1.15">Faster</option><option value="1.3">Fastest</option>
+              </select></div>
+            </div>
+            <label class="check" style="margin-top:10px"><input type="checkbox" id="bargeIn"><span><strong>Answer while it reads</strong><span>Start talking at any time to cut the question short. Best with headphones, so the microphone does not hear the speakers.</span></span></label>
+          </div>
+          <div class="btn-row" style="margin-top:10px"><button class="btn" type="button" id="voiceTest">Test voice</button></div>
         </div>
         <p class="hint" id="voiceNote"></p>
         <p class="count-line" id="playPool"></p>
@@ -1392,7 +1411,8 @@ body.tab-print.has-deck #print-root {
     dirty: false,
     filters: { topic: '', type: '', diff: '', q: '' },
     print: { mode: 'duplex', layout: '2x4', order: 'deck' },
-    play: { mode: 'quiz', topic: '', diff: '', ticked: true, length: '10', time: '60', voice: false, voiceName: '' },
+    play: { mode: 'quiz', topic: '', diff: '', ticked: true, length: '10', time: '60', voice: false, voiceName: '',
+      voiceEngine: 'browser', studioUrl: '', studioVoice: '', studioSpeed: '1', bargeIn: false },
     printDirty: true,
     pending: null,
     tab: 'prompt'
@@ -2149,9 +2169,13 @@ body.tab-print.has-deck #print-root {
       mode: mode, practice: !!opts.practice, variant: playVariant(mode), pool: list.slice(), queue: list, i: 0,
       score: 0, streak: 0, prevStreak: 0, bestStreak: 0, right: 0, wrong: 0, lives: LIVES, penalty: 0,
       missed: [], missedIds: new Set(), acc: 0, t0: Date.now(), holds: new Set(), pending: [], over: false,
-      voice: !!state.play.voice && !!(TTS || SR)
+      voice: !!state.play.voice && !!(TTS || SR || (studioWanted() && studio.ok))
     };
     voice.blocked = '';
+    if (g.voice && studioWanted()) {
+      if (!studio.ok) toast('VoiceStudio is not connected, so this game uses browser voices.');
+      else STUDIO_PHRASES.forEach(function (x) { ttsClip(x, false); });
+    }
     if (mode === 'clock') g.limit = +state.play.time * 1000;
     if (mode === 'match') {
       g.boards = [];
@@ -2174,6 +2198,7 @@ body.tab-print.has-deck #print-root {
   function stopGame() {
     if (!game) return;
     hush();
+    releaseMic();
     clearInterval(game.tick);
     game.pending.forEach(clearTimeout);
     game.over = true;
@@ -2194,7 +2219,7 @@ body.tab-print.has-deck #print-root {
     g.card = g.queue[g.i];
     g.answered = false; g.overridden = false;
     if (g.mode === 'typeit') { g.task = typeTask(g.card); renderTypeQ(); }
-    else { g.choices = choicesFor(g.card); renderQuestion(); }
+    else { g.choices = g.pre && g.pre.card === g.card ? g.pre.choices : choicesFor(g.card); renderQuestion(); }
   }
   function advance() { game.i++; nextTurn(); }
   function nextAction() { if (game.mode === 'survival' && game.lives <= 0) endGame('lives'); else advance(); }
@@ -2299,7 +2324,7 @@ body.tab-print.has-deck #print-root {
       '<p class="g-ask">' + ASK[c.type] + ' <span class="g-keys">Keys 1 to ' + n + ' work too.</span></p>' +
       '<div class="g-opts">' + opts + '</div>' + (g.voice ? '<p class="g-heard" id="gHeard"></p>' : '') + '<div id="gFeedback" aria-live="polite"></div>');
     $('#playStage .g-prompt').focus();
-    if (g.voice) readTurn();
+    if (g.voice) { readTurn(); prefetchTurn(); }
   }
 
   function answerChoice(i) {
@@ -2327,7 +2352,7 @@ body.tab-print.has-deck #print-root {
       '<button class="btn ghost" type="button" id="gSkip" data-g="skip">I don\'t know</button></div></form>' +
       (g.voice ? '<p class="g-heard" id="gHeard"></p>' : '') + '<div id="gFeedback" aria-live="polite"></div>');
     $('#gIn0').focus();
-    if (g.voice) readTurn();
+    if (g.voice) { readTurn(); prefetchTurn(); }
   }
 
   function checkTypeQ() {
@@ -2517,6 +2542,10 @@ body.tab-print.has-deck #print-root {
     if (sel.value !== state.play.voiceName) sel.value = '';
   }
   function voiceNote() {
+    if (studioWanted()) {
+      return 'VoiceStudio reads aloud with natural voices and listens on this computer, so nothing leaves it. Say the option number or the answer, "repeat" to hear it again or "skip" to pass. Match up is read out but played by clicking.' +
+        (window.isSecureContext === false ? ' This address cannot use the microphone; open the app through serve.py.' : '');
+    }
     if (!TTS && !SR) return 'This browser has no speech support, so voice mode is not available.';
     var s = [];
     if (!TTS) s.push('This browser cannot read aloud, but it can listen.');
@@ -2526,18 +2555,332 @@ body.tab-print.has-deck #print-root {
     return s.join(' ');
   }
   function renderVoiceSetup() {
-    var supported = !!(TTS || SR), on = supported && state.play.voice;
+    var on = !!state.play.voice, st = studioWanted();
     $('#playVoice').checked = on;
-    $('#playVoice').disabled = !supported;
-    $('#voiceOpts').hidden = !on || !TTS;
-    $('#voiceNote').textContent = on || !supported ? voiceNote() : '';
-    if (on) fillVoices();
+    $('#voiceOpts').hidden = !on;
+    $('#voiceEngine').value = state.play.voiceEngine;
+    $('#browserVoiceWrap').hidden = st || !TTS;
+    $('#studioOpts').hidden = !st;
+    $('#studioUrl').placeholder = defaultStudioUrl();
+    $('#studioUrl').value = state.play.studioUrl;
+    $('#studioSpeed').value = state.play.studioSpeed;
+    $('#bargeIn').checked = state.play.bargeIn;
+    $('#voiceNote').textContent = on ? voiceNote() : '';
+    if (on && !st) fillVoices();
+    if (on && st && !studio.connecting) studioConnect();
   }
 
-  // Never listens while speaking, so the microphone does not hear the question.
-  function say(text, done) {
+  /* ---- VoiceStudio engine: natural voices and private recognition on this computer ---- */
+  var AC = window.AudioContext || window.webkitAudioContext;
+  var MIC_BLOCKED = 'The microphone is blocked. Allow it for this page in the browser\'s site settings, then press Mic.';
+  var STUDIO_PHRASES = ['Right!', 'Right.', 'plus 100.', 'plus 200.', 'plus 300.', 'Not quite.', 'No.', 'Sorry, I did not catch that.'];
+  var studio = { ok: false, base: '', voices: [], connecting: null, audio: null, cache: new Map(), queue: [], inFlight: 0, stream: null, ctx: null, det: null };
+
+  function defaultStudioUrl() { return /^https?:$/.test(location.protocol) ? location.origin + '/voicestudio' : 'http://127.0.0.1:3900'; }
+  function studioBase() { return (state.play.studioUrl.trim() || defaultStudioUrl()).replace(/\/+$/, ''); }
+  function lang2() { return voiceLang().slice(0, 2).toLowerCase(); }
+  function studioWanted() { return state.play.voiceEngine === 'studio'; }
+  function useStudioTts() { return studioWanted() && studio.ok && !(game && game.ttsDown); }
+  function useStudioStt() {
+    return studioWanted() && studio.ok && !!(AC && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) && !(game && game.sttDown);
+  }
+  function canListen() { return useStudioStt() || !!SR; }
+
+  function studioFetch(path, opts) {
+    return fetch(studio.base + path, opts).then(function (r) {
+      if (r.ok) return r;
+      return r.text().then(function (t) {
+        var msg = '';
+        try { var j = JSON.parse(t); msg = (j.error && j.error.message) || (typeof j.detail === 'string' ? j.detail : ''); } catch (e) { msg = ''; }
+        var err = new Error(msg || 'HTTP ' + r.status);
+        err.status = r.status;
+        throw err;
+      });
+    });
+  }
+  function setStudioStatus(text, kind) {
+    var el = $('#studioStatus');
+    if (!el) return;
+    el.textContent = text;
+    el.className = 'hint' + (kind ? ' studio-' + kind : '');
+  }
+  function studioErrorText(e, base) {
+    if (e.status === 502 && e.message) return e.message;
+    if (e.status === 404 && base === location.origin + '/voicestudio') return 'This page was not opened through serve.py, so it cannot reach VoiceStudio. Run python3 serve.py and open the address it prints.';
+    if (e.status === 401) return 'VoiceStudio asked for a PIN or API key. Run VoiceStudio on this computer, where none is needed.';
+    if (e.status) return 'VoiceStudio answered with an error: ' + e.message;
+    return 'Could not reach VoiceStudio at ' + base + '. Check that VoiceStudio is open. If it is, the browser is blocking this page: start the app with python3 serve.py and open the address it prints.';
+  }
+  function studioConnect() {
+    var base = studioBase();
+    studio.ok = false;
+    studio.base = base;
+    setStudioStatus('Connecting to ' + base + '…', '');
+    var p = studio.connecting = studioFetch('/health').then(function () { return studioFetch('/v1/audio/voices'); })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (studio.connecting !== p) return;
+        studio.ok = true;
+        // OpenAI alias names all map to the engine default, so only the user's own voices are listed.
+        studio.voices = (Array.isArray(j && j.voices) ? j.voices : []).filter(function (v) { return v && v.type === 'profile' && (v.id || v.voice_id); });
+        fillStudioVoices();
+        setStudioStatus('Connected to VoiceStudio.' + (studio.voices.length ? ' ' + plural(studio.voices.length, 'voice') + ' of your own to choose from.' : ' Clone or design voices in VoiceStudio to pick them here.'), 'ok');
+      }, function (e) {
+        if (studio.connecting !== p) return;
+        setStudioStatus(studioErrorText(e, base), 'err');
+      });
+    return p;
+  }
+  function fillStudioVoices() {
+    var sel = $('#studioVoice'), want = state.play.studioVoice;
+    sel.innerHTML = '<option value="">Default</option>' + studio.voices.map(function (v) {
+      var id = v.id || v.voice_id;
+      return '<option value="' + esc(id) + '">' + esc((v.name || id) + (v.language ? ' (' + v.language + ')' : '')) + '</option>';
+    }).join('');
+    sel.value = want;
+    if (sel.value !== want) sel.value = '';
+  }
+
+  /* Speech clips: cached, fetched two at a time, and urgent requests jump the queue. */
+  function splitSentences(text) {
+    return (String(text).match(/[^.!?]+[.!?]*\s*/g) || [String(text)]).map(function (x) { return x.trim(); }).filter(Boolean);
+  }
+  function ttsKey(text) { return [studio.base, state.play.studioVoice, state.play.studioSpeed, lang2(), text].join('\u0001'); }
+  function ttsClip(text, urgent) {
+    var k = ttsKey(text), hit = studio.cache.get(k);
+    if (hit) {
+      studio.cache.delete(k);
+      studio.cache.set(k, hit);
+      if (urgent && !hit.job.started) { studio.queue.splice(studio.queue.indexOf(hit.job), 1); studio.queue.unshift(hit.job); }
+      return hit.promise;
+    }
+    var job = { started: false }, entry = { job: job };
+    entry.promise = new Promise(function (resolve, reject) {
+      job.run = function () {
+        job.started = true;
+        return studioFetch('/v1/audio/speech', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model: 'tts-1', input: text, voice: state.play.studioVoice || 'default',
+            speed: +state.play.studioSpeed || 1, language: lang2(), response_format: 'wav' })
+        }).then(function (r) { return r.blob(); }).then(function (b) {
+          if (!b.size) throw new Error('empty audio');
+          entry.url = URL.createObjectURL(b);
+          resolve(entry.url);
+        }).catch(reject);
+      };
+    });
+    entry.promise.catch(function () { if (studio.cache.get(k) === entry) studio.cache.delete(k); });
+    studio.cache.set(k, entry);
+    if (urgent) studio.queue.unshift(job); else studio.queue.push(job);
+    // Keep at most 60 finished clips, dropping the least recently used.
+    var it = studio.cache.keys(), key;
+    while (studio.cache.size > 60 && !(key = it.next()).done) {
+      var old = studio.cache.get(key.value);
+      if (old.url) { studio.cache.delete(key.value); URL.revokeObjectURL(old.url); }
+    }
+    pumpTts();
+    return entry.promise;
+  }
+  function pumpTts() {
+    function done() { studio.inFlight--; pumpTts(); }
+    while (studio.inFlight < 2 && studio.queue.length) {
+      studio.inFlight++;
+      studio.queue.shift().run().then(done, done);
+    }
+  }
+  function prefetch(text) { if (useStudioTts() && text) splitSentences(text).forEach(function (x) { ttsClip(x, false); }); }
+  // Warms the cache with this card's answer and the next card's question while the player thinks.
+  function prefetchTurn() {
+    var g = game;
+    if (!g || !g.voice || !useStudioTts()) return;
+    prefetch(sentences([speechText('<strong>Answer:</strong> ' + (g.mode === 'typeit' ? typedAnswerHtml(g.card) : faceHtml(g.card).back))]));
+    var nc = g.queue[g.i + 1];
+    if (!nc) return;
+    if (g.mode === 'typeit') prefetch(questionSpeech(nc, null, typeTask(nc)));
+    else { g.pre = { card: nc, choices: choicesFor(nc) }; prefetch(questionSpeech(nc, g.pre.choices)); }
+  }
+  function stopAudio() {
+    var a = studio.audio;
+    if (!a) return;
+    a.onended = a.onerror = null;
+    try { a.pause(); } catch (e) { /* ignore */ }
+  }
+  function studioSpeak(text, tok, fin) {
+    var parts = splitSentences(text), clips = [], a = studio.audio || (studio.audio = new Audio()), i = 0;
+    // Request in reverse so the urgent queue ends up in reading order.
+    for (var k = parts.length - 1; k >= 0; k--) clips[k] = ttsClip(parts[k], true);
+    function fail(idx) {
+      if (tok !== voice.token) return;
+      a.onended = a.onerror = null;
+      studioDown('tts');
+      browserSpeak(parts.slice(idx).join(' '), fin);
+    }
+    function next() {
+      if (tok !== voice.token) return;
+      if (i >= clips.length) { fin(); return; }
+      var idx = i++;
+      clips[idx].then(function (url) {
+        if (tok !== voice.token) return;
+        a.onended = next;
+        a.onerror = function () { fail(idx); };
+        a.src = url;
+        var pr = a.play();
+        if (pr && pr.catch) pr.catch(function () { fail(idx); });
+      }, function () { fail(idx); });
+    }
+    next();
+  }
+
+  /* Listening: voice activity detection, then VoiceStudio transcribes the clip. */
+  function micStream() {
+    if (studio.stream && studio.stream.active) return Promise.resolve(studio.stream);
+    return navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 } })
+      .then(function (s) { studio.stream = s; return s; });
+  }
+  function releaseMic() {
+    stopDetector();
+    if (studio.stream) { studio.stream.getTracks().forEach(function (t) { t.stop(); }); studio.stream = null; }
+    if (studio.ctx) { try { studio.ctx.close(); } catch (e) { /* ignore */ } studio.ctx = null; }
+  }
+  function studioListen() {
+    var g = game;
+    micStream().then(function (stream) {
+      if (game !== g || !voice.want || studio.det || voice.transcribing) return;
+      startDetector(stream);
+      voiceUi();
+    }, function (err) {
+      voice.blocked = err && (err.name === 'NotAllowedError' || err.name === 'SecurityError') ? MIC_BLOCKED : 'No microphone was found. You can still click or type.';
+      voice.want = false;
+      showHeard(voice.blocked);
+      voiceUi();
+    });
+  }
+  // Keeps a short pre-roll so the start of a word is not clipped, and stops after a pause.
+  function startDetector(stream) {
+    var ctx = studio.ctx || (studio.ctx = new AC());
+    if (ctx.state === 'suspended') ctx.resume();
+    var src = ctx.createMediaStreamSource(stream), proc = ctx.createScriptProcessor(2048, 1, 1);
+    var rate = ctx.sampleRate, frameMs = 2048 / rate * 1000;
+    var det = { src: src, proc: proc, pre: [], rec: [], floor: 0.004, loud: 0, quiet: 0, speaking: false, ms: 0 };
+    proc.onaudioprocess = function (e) {
+      if (studio.det !== det) return;
+      var frame = new Float32Array(e.inputBuffer.getChannelData(0)), sum = 0;
+      for (var i = 0; i < frame.length; i++) sum += frame[i] * frame[i];
+      var rms = Math.sqrt(sum / frame.length), thr = Math.max(0.012, det.floor * 3);
+      if (!det.speaking) {
+        det.pre.push(frame);
+        if (det.pre.length > 8) det.pre.shift();
+        if (rms > thr) det.loud++;
+        else { det.loud = 0; det.floor = det.floor * 0.95 + rms * 0.05; }
+        if (det.loud >= 3) {
+          det.speaking = true; det.rec = det.pre; det.pre = [];
+          det.ms = det.rec.length * frameMs; det.quiet = 0;
+          interruptSpeech();
+          showHeard('Listening…');
+        }
+      } else {
+        det.rec.push(frame);
+        det.ms += frameMs;
+        det.quiet = rms > thr * 0.6 ? 0 : det.quiet + frameMs;
+        if (det.quiet >= 900 || det.ms >= 10000) finishDetection(det, rate);
+      }
+    };
+    src.connect(proc);
+    proc.connect(ctx.destination);
+    studio.det = det;
+  }
+  function stopDetector() {
+    var det = studio.det;
+    if (!det) return;
+    studio.det = null;
+    det.proc.onaudioprocess = null;
+    try { det.src.disconnect(); det.proc.disconnect(); } catch (e) { /* ignore */ }
+  }
+  function finishDetection(det, rate) {
+    stopDetector();
+    if (det.ms - det.quiet < 250) { showHeard(''); wantListen(); return; } // a click or a cough
+    transcribe(encodeWav(det.rec, rate, 16000));
+  }
+  // 16 kHz mono 16-bit WAV, which every speech engine can read.
+  function encodeWav(frames, inRate, outRate) {
+    var len = 0, o = 0;
+    frames.forEach(function (f) { len += f.length; });
+    var data = new Float32Array(len);
+    frames.forEach(function (f) { data.set(f, o); o += f.length; });
+    var ratio = inRate / outRate, outLen = Math.floor(len / ratio), buf = new ArrayBuffer(44 + outLen * 2), dv = new DataView(buf);
+    function tag(off, s) { for (var k = 0; k < s.length; k++) dv.setUint8(off + k, s.charCodeAt(k)); }
+    tag(0, 'RIFF'); dv.setUint32(4, 36 + outLen * 2, true); tag(8, 'WAVE'); tag(12, 'fmt ');
+    dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true); dv.setUint32(24, outRate, true);
+    dv.setUint32(28, outRate * 2, true); dv.setUint16(32, 2, true); dv.setUint16(34, 16, true);
+    tag(36, 'data'); dv.setUint32(40, outLen * 2, true);
+    for (var i = 0; i < outLen; i++) {
+      var a = Math.floor(i * ratio), b = Math.max(a + 1, Math.min(len, Math.floor((i + 1) * ratio))), s = 0;
+      for (var j = a; j < b; j++) s += data[j];
+      var v = clamp(s / (b - a), -1, 1);
+      dv.setInt16(44 + i * 2, v < 0 ? v * 0x8000 : v * 0x7fff, true);
+    }
+    return new Blob([buf], { type: 'audio/wav' });
+  }
+  // Hints the recogniser toward this deck's words. Type it mixes in other cards' answers so the hint does not give the answer away.
+  function sttPrompt() {
+    var g = game, list;
+    if (g.mode === 'typeit') {
+      list = shuffle(g.pool.filter(function (c) { return c !== g.card; })).slice(0, 7).map(function (c) { var t = typeTask(c); return t ? t.answers.join(', ') : ''; })
+        .concat([g.task.answers.join(', ')]);
+      list = shuffle(list.filter(Boolean));
+    } else {
+      list = g.choices.options.map(function (x) { return x.split(/\s+/).slice(0, 12).join(' '); }).concat(['option one, two, three or four']);
+    }
+    return list.join('; ').slice(0, 600);
+  }
+  function transcribe(wav) {
+    var g = game, fd = new FormData();
+    fd.append('file', wav, 'answer.wav');
+    fd.append('model', 'whisper-1');
+    fd.append('response_format', 'json');
+    fd.append('language', lang2());
+    fd.append('prompt', sttPrompt());
+    voice.transcribing = true;
+    showHeard('Transcribing…');
+    voiceUi();
+    studioFetch('/v1/audio/transcriptions', { method: 'POST', body: fd }).then(function (r) { return r.json(); }).then(function (j) {
+      voice.transcribing = false;
+      if (game !== g || g.over || !voice.want) { voiceUi(); return; }
+      g.sttFails = 0;
+      var t = String(j && j.text || '').trim();
+      if (!t) { showHeard(''); wantListen(); return; }
+      showHeard('Heard: “' + t + '”');
+      voice.want = false;
+      handleSpoken([t]);
+    }, function () {
+      voice.transcribing = false;
+      if (game !== g || g.over) return;
+      g.sttFails = (g.sttFails || 0) + 1;
+      if (g.sttFails >= 2) studioDown('stt');
+      else if (voice.want) { showHeard('That did not come through. Please say it again.'); wantListen(); }
+      voiceUi();
+    });
+  }
+  // When VoiceStudio stops responding mid-game, carry on with the browser's speech.
+  function studioDown(kind) {
+    var g = game;
+    if (!g || g.over) return;
+    if (kind === 'tts') g.ttsDown = true;
+    else { g.sttDown = true; stopDetector(); }
+    if (!g.studioNoticed) {
+      g.studioNoticed = true;
+      showHeard('VoiceStudio stopped responding, so this game uses the browser\'s ' + (kind === 'tts' ? 'voice' : 'speech recognition') + ' instead.' +
+        (kind === 'stt' && !SR ? ' Click or type your answers.' : ''));
+    }
+    if (kind === 'stt' && voice.want) wantListen();
+  }
+
+  /* ---- Speaking and listening, with whichever engine is active ---- */
+  // Never listens while speaking unless barge-in asked for it, so the microphone does not hear the question.
+  function say(text, done, keepListening) {
     var tok = ++voice.token, finished = false;
-    stopListen();
+    if (!keepListening) stopListen();
+    stopAudio();
     if (TTS) TTS.cancel();
     text = String(text || '').trim();
     function fin() {
@@ -2547,13 +2890,20 @@ body.tab-print.has-deck #print-root {
       voiceUi();
       if (done) done();
     }
-    if (!TTS || !text) { fin(); return; }
+    var studioOn = useStudioTts();
+    if (!text || (!studioOn && !TTS)) { fin(); return; }
+    hold('speech'); voice.speaking = true; voiceUi();
+    if (studioOn) studioSpeak(text, tok, fin); else browserSpeak(text, fin);
+    // In case the engine never reports the end.
+    setTimeout(fin, studioOn ? 20000 + text.length * 150 : 3000 + text.length * 100);
+  }
+  function browserSpeak(text, fin) {
+    if (!TTS) { fin(); return; }
     // Chrome can stop long utterances early, so speak sentence sized chunks.
     var parts = text.match(/[^.!?]+[.!?]*\s*/g) || [text], list = [], cur = '';
     parts.forEach(function (p) { if (cur && (cur + p).length > 180) { list.push(cur); cur = ''; } cur += p; });
     if (cur.trim()) list.push(cur);
     var v = pickVoice();
-    hold('speech'); voice.speaking = true; voiceUi();
     list.forEach(function (part, i) {
       var u = new SpeechSynthesisUtterance(part);
       if (v) u.voice = v;
@@ -2562,11 +2912,21 @@ body.tab-print.has-deck #print-root {
       if (i === list.length - 1) u.onend = fin;
       TTS.speak(u);
     });
-    setTimeout(fin, 3000 + text.length * 100); // in case the browser never reports the end
+  }
+  // Barge-in: the player started talking, so stop reading but keep listening.
+  function interruptSpeech() {
+    if (!voice.speaking) return;
+    voice.token++;
+    stopAudio();
+    if (TTS) TTS.cancel();
+    voice.speaking = false;
+    release('speech');
+    voiceUi();
   }
   function hush() {
     voice.token++;
     stopListen();
+    stopAudio();
     if (TTS) TTS.cancel();
     if (voice.speaking) { voice.speaking = false; release('speech'); }
     voiceUi();
@@ -2574,13 +2934,15 @@ body.tab-print.has-deck #print-root {
 
   function wantListen() {
     var g = game;
-    if (!SR || !g || !g.voice || g.over || voice.micOff || voice.blocked || state.tab !== 'play' || document.hidden) { voiceUi(); return; }
+    if (!canListen() || !g || !g.voice || g.over || voice.micOff || voice.blocked || state.tab !== 'play' || document.hidden) { voiceUi(); return; }
     voice.want = true;
-    if (!voice.active) startRec();
+    if (useStudioStt()) { if (!studio.det && !voice.transcribing) studioListen(); }
+    else if (!voice.active) startRec();
     voiceUi();
   }
   function stopListen() {
     voice.want = false;
+    stopDetector();
     if (voice.active && voice.rec) { try { voice.rec.abort(); } catch (e) { /* already stopped */ } }
   }
   function startRec() {
@@ -2603,8 +2965,7 @@ body.tab-print.has-deck #print-root {
     voiceUi();
   }
   function onRecError(e) {
-    var blocked = 'The microphone is blocked. Allow it for this page in the browser\'s site settings, then press Mic.';
-    var msg = { 'not-allowed': blocked, 'service-not-allowed': blocked,
+    var msg = { 'not-allowed': MIC_BLOCKED, 'service-not-allowed': MIC_BLOCKED,
       'audio-capture': 'No microphone was found. You can still click or type.',
       network: 'Listening needs an internet connection. You can still click or type.' }[e.error];
     if (!msg) return;
@@ -2657,12 +3018,14 @@ body.tab-print.has-deck #print-root {
     if (!g || g.over || !g.voice) return;
     if (g.mode === 'match') { say(MATCH_INTRO); return; }
     if (g.answered) { if (g.fbSpeech) say(g.fbSpeech.text, g.fbSpeech.done); return; }
-    var text;
-    if (g.mode === 'typeit') text = sentences([speechText(g.task.prompt), g.task.ask]);
-    else text = sentences([speechText(faceHtml(g.card).front)].concat(g.choices.options.map(function (o, i) {
-      return 'Option ' + (i + 1) + ': ' + o;
-    })));
-    say(text, wantListen);
+    var text = g.mode === 'typeit' ? questionSpeech(g.card, null, g.task) : questionSpeech(g.card, g.choices);
+    if (state.play.bargeIn && useStudioStt()) { say(text, wantListen, true); wantListen(); }
+    else say(text, wantListen);
+  }
+  // Same text for playback and prefetch, so prefetched clips are reused.
+  function questionSpeech(card, choices, task) {
+    if (task) return sentences([speechText(task.prompt), task.ask]);
+    return sentences([speechText(faceHtml(card).front)].concat(choices.options.map(function (o, i) { return 'Option ' + (i + 1) + ': ' + o; })));
   }
   function voiceFeedback(ok, head, body, waitForWord) {
     var g = game, at = g.i, text, done;
@@ -2680,15 +3043,16 @@ body.tab-print.has-deck #print-root {
   }
   function voiceState() {
     if (voice.speaking) return 'Speaking';
-    if (voice.active && voice.want) return 'Listening';
-    if (!SR || voice.micOff || voice.blocked) return 'Mic off';
+    if (voice.transcribing) return 'Transcribing';
+    if (voice.want && (voice.active || studio.det)) return 'Listening';
+    if (!canListen() || voice.micOff || voice.blocked) return 'Mic off';
     return 'Voice on';
   }
   function voiceHudHtml() {
     var st = voiceState();
     return '<span class="voice-chip' + (st === 'Listening' ? ' live' : '') + '" id="gVoice">' + st + '</span>' +
       (game.mode === 'match' ? '' : '<button class="btn small ghost" type="button" data-g="repeat" title="Read it again (R)">Repeat</button>' +
-        (SR ? '<button class="btn small ghost" type="button" data-g="mic" id="gMic">' + (voice.micOff || voice.blocked ? 'Mic: off' : 'Mic: on') + '</button>' : ''));
+        (canListen() ? '<button class="btn small ghost" type="button" data-g="mic" id="gMic">' + (voice.micOff || voice.blocked ? 'Mic: off' : 'Mic: on') + '</button>' : ''));
   }
   function voiceUi() {
     var el = $('#gVoice'), mb = $('#gMic');
@@ -2703,7 +3067,7 @@ body.tab-print.has-deck #print-root {
     } else { voice.micOff = true; stopListen(); }
     voiceUi();
   }
-  function voicePause() { if (game && game.voice) hush(); }
+  function voicePause() { if (game && game.voice) { hush(); releaseMic(); } }
   function voiceResume() { if (game && game.voice && !game.over && game.mode !== 'match') readTurn(); }
 
   /* ---- Results ---- */
@@ -2711,7 +3075,7 @@ body.tab-print.has-deck #print-root {
     var g = game;
     if (!g || g.over) return;
     g.time = elapsed();
-    if (g.voice) hush();
+    if (g.voice) { hush(); releaseMic(); }
     g.acc = g.time; g.over = true; g.reason = reason;
     clearInterval(g.tick);
     g.pending.forEach(clearTimeout); g.pending = [];
@@ -2968,7 +3332,18 @@ body.tab-print.has-deck #print-root {
       if (['60', '90', '120'].indexOf(pl.time) >= 0) state.play.time = pl.time;
       if (typeof pl.voice === 'boolean') state.play.voice = pl.voice;
       if (typeof pl.voiceName === 'string') state.play.voiceName = pl.voiceName;
+      if (pl.voiceEngine === 'browser' || pl.voiceEngine === 'studio') state.play.voiceEngine = pl.voiceEngine;
+      if (typeof pl.studioUrl === 'string') state.play.studioUrl = pl.studioUrl;
+      if (typeof pl.studioVoice === 'string') state.play.studioVoice = pl.studioVoice;
+      if (['0.85', '1', '1.15', '1.3'].indexOf(pl.studioSpeed) >= 0) state.play.studioSpeed = pl.studioSpeed;
+      if (typeof pl.bargeIn === 'boolean') state.play.bargeIn = pl.bargeIn;
     }
+    $('#voiceEngine').addEventListener('change', function () { state.play.voiceEngine = this.value; savePlay(); renderVoiceSetup(); });
+    $('#studioUrl').addEventListener('change', function () { state.play.studioUrl = this.value.trim(); savePlay(); studioConnect(); });
+    $('#studioConnect').addEventListener('click', function () { studioConnect(); });
+    $('#studioVoice').addEventListener('change', function () { state.play.studioVoice = this.value; savePlay(); });
+    $('#studioSpeed').addEventListener('change', function () { state.play.studioSpeed = this.value; savePlay(); });
+    $('#bargeIn').addEventListener('change', function () { state.play.bargeIn = this.checked; savePlay(); });
     $('#playVoice').addEventListener('change', function () { state.play.voice = this.checked; savePlay(); renderVoiceSetup(); });
     $('#playVoiceName').addEventListener('change', function () { state.play.voiceName = this.value; savePlay(); });
     $('#voiceTest').addEventListener('click', function () { say('Voice mode is ready. Say the option number or the answer.'); });
@@ -3019,7 +3394,7 @@ body.tab-print.has-deck #print-root {
 
   // Exposed for testing in the browser console.
   window.FTM = { parseInput: parseInput, validateDeck: validateDeck, buildPrompt: buildPrompt, computeStudyOrder: computeStudyOrder, state: state, buildPrint: buildPrint, checkTyped: checkTyped, startGame: startGame,
-    pickOption: pickOption, parseCommand: parseCommand, matchSpoken: matchSpoken, speechText: speechText };
+    pickOption: pickOption, parseCommand: parseCommand, matchSpoken: matchSpoken, speechText: speechText, encodeWav: encodeWav };
 
   init();
 })();

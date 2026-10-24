@@ -42,4 +42,33 @@ with no build step, no backend and no external libraries.
    connection, because the browser sends the audio to its speech service.
    The browser asks for microphone access the first time.
 
+Natural voices with VoiceStudio (optional)
+------------------------------------------
+For lifelike voices and private, more accurate listening, voice mode can use
+VoiceStudio (https://github.com/debpalash/VoiceStudio), a free app that runs
+speech models on your own computer.
+
+1. Install VoiceStudio and open it. It serves a speech API at
+   http://127.0.0.1:3900.
+2. Start this app with the launcher: python3 serve.py
+   It opens http://localhost:8765 and passes voice requests to VoiceStudio.
+   Browsers do not let a page opened as a file talk to VoiceStudio, so use
+   the launcher for this. It needs Python 3.7 or later and nothing else.
+   Options: --port 9000, --voicestudio http://127.0.0.1:3900
+3. In Play, tick Voice mode, set Voice engine to VoiceStudio and press
+   Connect. Pick one of your cloned or designed voices and a speed.
+
+With VoiceStudio:
+- Questions are read in a natural voice. The next card is prepared while you
+  answer, so there is little waiting.
+- Your answer is recorded only while you speak, then transcribed by
+  VoiceStudio on your computer. Nothing is sent to the internet. The deck's
+  own words are passed as a hint, so subject terms are recognised well.
+- "Answer while it reads" lets you cut a question short by speaking. Use
+  headphones for this, so the microphone does not hear the speakers.
+- If VoiceStudio stops responding, the game carries on with the browser's
+  voice and recognition.
+VoiceStudio is AGPL-3.0 licensed and its voice models have their own terms.
+Only clone voices you have permission to use.
+
 The last deck, settings and best scores are kept in the browser's local storage.
